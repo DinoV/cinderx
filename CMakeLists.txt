@@ -27,10 +27,10 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(SHARED_FLAGS "-DPy_BUILD_CORE -DPy_BUILD_CORE_MODULE -fPIC -Wall -Wextra -Wno-c99-designator -Wno-c++11-narrowing -Wno-cast-function-type-mismatch -Wno-deprecated-declarations -Wno-missing-field-initializers -Wno-null-pointer-subtraction -Wno-sign-compare -Wno-unknown-pragmas -Wno-unused-function -Wno-unused-parameter")
+set(SHARED_FLAGS "-DPy_BUILD_CORE -DPy_BUILD_CORE_MODULE -fPIC")
 
 macro(set_flag VAR)
-  if (DEFINED ${VAR} AND ${${VAR}})
+  if (DEFINED ${VAR} AND "${${VAR}}")
     set(SHARED_FLAGS "-D${VAR} ${SHARED_FLAGS}")
   endif()
 endmacro()
@@ -121,7 +121,14 @@ file(COPY ${usdt_SOURCE_DIR}/usdt.h DESTINATION ${USDT_DIR})
 ########################################
 # zlib
 
-find_package(ZLIB)
+FetchContent_Declare(
+    zlib
+    GIT_REPOSITORY "https://github.com/madler/zlib.git"
+    FIND_PACKAGE_ARGS NAMES ZLIB
+)
+FetchContent_MakeAvailable(zlib)
+
+#find_package(ZLIB REQUIRED)
 
 ##############################################################################
 # Build cinderx
@@ -139,7 +146,7 @@ include_directories(
 
 file(GLOB_RECURSE COMMON_SOURCES ${PROJECT_SOURCE_DIR}/Common/*.cpp)
 add_library(common ${COMMON_SOURCES})
-target_link_libraries(common PRIVATE asmjit::asmjit fmt::fmt ZLIB::ZLIB)
+target_link_libraries(common PRIVATE asmjit::asmjit fmt::fmt zlib)
 
 ########################################
 # UpstreamBorrow/
