@@ -5,7 +5,9 @@
 #include "cinderx/Common/log.h"
 #include "cinderx/Jit/elf/reader.h"
 
+#ifndef WIN32
 #include <dlfcn.h>
+#endif
 
 namespace jit {
 
@@ -114,6 +116,7 @@ CompiledFunction* Context::addCompiledFunction(
   return pair.first->second.get();
 }
 
+#ifndef WIN32
 void AotContext::init(void* bundle_handle) {
   JIT_CHECK(
       bundle_handle_ == nullptr,
@@ -172,5 +175,6 @@ const AotContext::FuncState* AotContext::lookupFuncState(
   auto it = funcs_.find(name);
   return it != funcs_.end() ? &it->second : nullptr;
 }
+#endif
 
 } // namespace jit

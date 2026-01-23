@@ -666,9 +666,9 @@ static void ctxmgrwrp_dealloc(_Py_ContextManagerWrapper* self) {
 }
 
 PyTypeObject _PyContextDecoratorWrapper_Type = {
-    PyVarObject_HEAD_INIT(&PyType_Type, 0) "context_decorator_wrapper",
+    PyVarObject_HEAD_INIT(NULL, 0) "context_decorator_wrapper",
     sizeof(_Py_ContextManagerWrapper),
-    .tp_base = &_PyWeakref_RefType,
+    //.tp_base = &_PyWeakref_RefType,
     .tp_dealloc = (destructor)ctxmgrwrp_dealloc,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,
     .tp_traverse = (traverseproc)ctxmgrwrp_traverse,
@@ -810,7 +810,7 @@ Ci_Py_TYPED_SIGNATURE(
     NULL);
 
 #else
-
+#ifndef _WIN32
 static PyObject* posix_clock_gettime_ns(PyObject* mod) {
   struct timespec result;
   int64_t ret;
@@ -819,6 +819,7 @@ static PyObject* posix_clock_gettime_ns(PyObject* mod) {
   ret = result.tv_sec * 1e9 + result.tv_nsec;
   return PyLong_FromLong(ret);
 }
+#endif
 
 static PyObject* static_property_missing_fget(PyObject* mod, PyObject* self) {
   PyErr_SetString(PyExc_AttributeError, "unreadable attribute");
@@ -1790,11 +1791,13 @@ static PyMethodDef static_methods[] = {
      METH_FASTCALL,
      ""},
 #if PY_VERSION_HEX < 0x030C0000
+#ifndef _WIN32
     {"posix_clock_gettime_ns",
      (PyCFunction)&posix_clock_gettime_ns_def,
      Ci_METH_TYPED,
      "Returns time in nanoseconds as an int64. Note: Does no error checks at "
      "all."},
+#endif
     {"_property_missing_fget",
      (PyCFunction)&static_property_missing_fget_def,
      Ci_METH_TYPED,
@@ -1808,11 +1811,13 @@ static PyMethodDef static_methods[] = {
      Ci_METH_TYPED,
      ""},
 #else
+#ifndef WIN32
     {"posix_clock_gettime_ns",
      (PyCFunction)&posix_clock_gettime_ns,
      METH_NOARGS,
      "Returns time in nanoseconds as an int64. Note: Does no error checks at "
      "all."},
+#endif
     {"_property_missing_fget",
      (PyCFunction)&static_property_missing_fget,
      METH_O,

@@ -2,3 +2,27 @@ scratch
 cinderx.egg-info
 dist
 
+# Windows build artifacts
+*.obj
+*.vcxproj*
+.vs/*
+generated/*
+Debug/*
+CMakeCache.txt
+CMakeFiles/*
+cmake_install.cmake
+*.slnx
+_deps/*
+x64/*
+.vscode/
+
+_cinderx.dir/*
+borrowed.dir/*
+cached-properties.dir/*
+common.dir/*
+immortalize.dir/*
+interpreter.dir/*
+jit.dir/*
+parallel-gc.dir/*
+static-python.dir/*
+

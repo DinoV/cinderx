@@ -54,7 +54,9 @@
 #include "internal/pycore_modsupport.h"
 #endif
 
+#ifndef WIN32
 #include <dlfcn.h>
+#endif
 
 namespace {
 

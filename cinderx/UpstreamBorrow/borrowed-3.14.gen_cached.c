@@ -34,6 +34,10 @@
 #undef _PyObject_GC_TRACK
 #define _PyObject_GC_TRACK PyObject_GC_Track
 
+#ifndef DK_KIND
+#define DK_KIND(dk) dk->dk_kind
+#endif
+
 getattrofunc Ci_tp_getattr_hook, Ci_tp_getattro;
 
 // _Py_slot_tp_getattr_hook is used when __getattr__ is defined
@@ -1341,6 +1345,7 @@ new_keys_object(PyInterpreterState *interp, uint8_t log2_size, bool unicode)
     memset(&dk->dk_indices[(size_t)1 << log2_bytes], 0, entry_size * usable);
     return dk;
 }
+#ifdef ENABLE_LAZY_IMPORTS
 static void
 lazy_import_verbose_lock_held(PyThreadState *tstate, PyObject *value)
 {
@@ -1390,6 +1395,7 @@ lazy_import_verbose(PyObject *value)
         PyErr_Clear();
     }
 }
+#endif
 static int
 insert_to_emptydict(PyInterpreterState *interp, PyDictObject *mp,
                     PyObject *key, Py_hash_t hash, PyObject *value)

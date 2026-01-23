@@ -8,6 +8,8 @@
 #include <ostream>
 #include <sstream>
 
+#ifndef WIN32
+
 namespace jit::elf {
 
 namespace {
@@ -466,3 +468,5 @@ void writeEntries(std::ostream& os, const std::vector<CodeEntry>& entries) {
 }
 
 } // namespace jit::elf
+
+#endif

@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#ifndef WIN32
+
 namespace jit::elf {
 
 // Section header indices / ordering.
@@ -110,3 +112,5 @@ struct CodeEntry {
 void writeEntries(std::ostream& os, const std::vector<CodeEntry>& entries);
 
 } // namespace jit::elf
+
+#endif

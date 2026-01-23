@@ -293,6 +293,8 @@ class Worklist {
   std::unordered_set<T> set_;
 };
 
+#undef max
+#undef min
 template <std::integral T>
 bool fitsInt32(T val) {
   return std::cmp_less_equal(val, std::numeric_limits<int32_t>::max()) &&

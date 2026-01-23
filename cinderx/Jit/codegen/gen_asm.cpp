@@ -998,7 +998,7 @@ NativeGenerator::FrameInfo NativeGenerator::computeFrameInfo() {
       // env_.shadow_frames_and_spill_size.
       // Make sure we have at least one word for scratch in the epilogue.
       .header_and_spill_size =
-          std::max(env_.shadow_frames_and_spill_size, kPointerSize),
+          (std::max)(env_.shadow_frames_and_spill_size, kPointerSize),
       .saved_regs = env_.changed_regs & CALLEE_SAVE_REGS,
       .arg_buffer_size = env_.max_arg_buffer_size,
   };
@@ -2111,7 +2111,7 @@ int NativeGenerator::calcInlineStackSize(const hir::Function* func) {
 #else
       int depth = bif->inlineDepth() * kJITShadowFrameSize;
 #endif
-      result = std::max(depth, result);
+      result = (std::max)(depth, result);
     }
   }
   return result;

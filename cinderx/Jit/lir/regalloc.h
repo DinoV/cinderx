@@ -36,7 +36,7 @@ using LIRLocation = int;
 
 constexpr LIRLocation START_LOCATION = 0;
 constexpr LIRLocation INVALID_LOCATION = -1;
-constexpr LIRLocation MAX_LOCATION = std::numeric_limits<LIRLocation>::max();
+constexpr LIRLocation MAX_LOCATION = (std::numeric_limits<LIRLocation>::max)();
 
 struct LiveRange {
   LiveRange(LIRLocation s, LIRLocation e);

@@ -76,7 +76,7 @@ struct DescrOrClassVarMutator {
   int setAttr(PyObject* obj, PyObject* name, PyObject* value);
 
   BorrowedRef<> descr;
-  uint keys_version;
+  uint32_t keys_version;
 };
 
 // An instance of AttributeMutator is specialized to more efficiently perform a
@@ -108,7 +108,7 @@ class AttributeMutator {
   void set_data_descr(PyTypeObject* type, PyObject* descr);
   void set_member_descr(PyTypeObject* type, PyObject* descr);
   void
-  set_descr_or_classvar(PyTypeObject* type, PyObject* descr, uint keys_version);
+  set_descr_or_classvar(PyTypeObject* type, PyObject* descr, uint32_t keys_version);
   void set_split(
       PyTypeObject* type,
       Py_ssize_t val_offset,
@@ -268,7 +268,7 @@ class LoadMethodCache {
     BorrowedRef<PyTypeObject> type;
     BorrowedRef<> value;
 #if PY_VERSION_HEX >= 0x030C0000
-    uint keys_version;
+    uint32_t keys_version;
 #endif
 
     bool isValidKeysVersion(BorrowedRef<> obj);
