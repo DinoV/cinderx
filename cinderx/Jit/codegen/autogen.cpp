@@ -1111,24 +1111,55 @@ void translateSetupFrame(Environ* env, const Instruction*) {
   arch::Builder* as = env->as;
 
 #if defined(CINDER_X86_64)
-  // Allocate header + spill space, then push callee-saved registers.
-  // Push is 1-2B per register vs 4-7B for movq to a stack slot.
+  // Allocate header + spill space, then save callee-saved registers.
   asmjit::BaseNode* alloc_cursor = as->cursor();
   as->sub(x86::rsp, env->resume_header_and_spill_size);
   env->addAnnotation(std::string("Allocate stack frame"), alloc_cursor);
 
   asmjit::BaseNode* save_cursor = as->cursor();
-  auto saved_regs = env->resume_saved_regs;
-  while (!saved_regs.Empty()) {
-    as->push(x86::gpq(saved_regs.GetFirst().loc));
-    saved_regs.RemoveFirst();
+  auto gp_saved_regs = env->resume_saved_regs & ALL_GP_REGISTERS;
+  // Push GP callee-saved registers (1-2B per register).
+  while (!gp_saved_regs.Empty()) {
+    as->push(x86::gpq(gp_saved_regs.GetFirst().loc));
+    gp_saved_regs.RemoveFirst();
+  }
+
+  auto gp_save_count = (env->resume_saved_regs & ALL_GP_REGISTERS).count();
+#ifdef _WIN32
+  auto vecd_saved_regs = env->resume_saved_regs & ALL_VECD_REGISTERS;
+  auto vecd_save_count = vecd_saved_regs.count();
+
+  // On Windows, callee-saved XMM registers (XMM6-XMM15) are saved via movaps
+  // into the stack space between the GP pushes and the arg buffer.
+  // Compute the offset where XMM saves start (right after GP pushes, aligned).
+  int vecd_area_size = vecd_save_count * 16;
+  if (vecd_save_count > 0 && (gp_save_count * kPointerSize) % 16 != 0) {
+    vecd_area_size += kPointerSize; // alignment padding
   }
   int arg_buffer_size = env->resume_frame_total_size -
       env->resume_header_and_spill_size -
-      env->resume_saved_regs.count() * kPointerSize;
+      gp_save_count * kPointerSize - vecd_area_size;
+  if (vecd_area_size + arg_buffer_size > 0) {
+    as->sub(x86::rsp, vecd_area_size + arg_buffer_size);
+  }
+  // Save XMM registers into [rsp + arg_buffer_size + offset]
+  int xmm_offset = arg_buffer_size;
+  while (!vecd_saved_regs.Empty()) {
+    auto reg = vecd_saved_regs.GetFirst();
+    as->movaps(
+        x86::ptr(x86::rsp, xmm_offset),
+        x86::xmm(reg.loc - VECD_REG_BASE));
+    xmm_offset += 16;
+    vecd_saved_regs.RemoveFirst();
+  }
+#else
+  int arg_buffer_size = env->resume_frame_total_size -
+      env->resume_header_and_spill_size -
+      gp_save_count * kPointerSize;
   if (arg_buffer_size > 0) {
     as->sub(x86::rsp, arg_buffer_size);
   }
+#endif
   env->addAnnotation(std::string("Save callee-saved registers"), save_cursor);
 #elif defined(CINDER_AARCH64)
   // allocateHeaderAndSpillSpace()
