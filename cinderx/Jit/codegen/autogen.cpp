@@ -746,6 +746,22 @@ void translateYieldInitial(Environ* env, const Instruction* instr) {
   // a register before spilling. Still needs to be in memory though so it can be
   // recovered after calling JITRT_MakeGenObject* which will trash it.
   PhyLocation tstate = instr->getInput(0)->getStackSlot();
+
+#ifdef _WIN32
+  // On Windows x64, std::pair<ptr,ptr> is returned via a hidden first pointer
+  // argument.  Use the pre-allocated struct return buffer in the frame (at
+  // env->win_struct_ret_offset from RBP) to avoid dynamic RSP adjustments.
+  as->lea(x86::rcx, x86::ptr(x86::rbp, env->win_struct_ret_offset));
+  as->mov(x86::rdx, x86::ptr(x86::rbp, tstate.loc));
+
+  emitCall(
+      *env,
+      reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
+      instr);
+  // Both fields are in the struct buffer.
+  as->mov(x86::rax, x86::ptr(x86::rbp, env->win_struct_ret_offset));
+  as->mov(x86::rdx, x86::ptr(x86::rbp, env->win_struct_ret_offset + 8));
+#else
   as->mov(x86::rdi, x86::ptr(x86::rbp, tstate.loc));
 
   emitCall(
@@ -753,6 +769,7 @@ void translateYieldInitial(Environ* env, const Instruction* instr) {
       reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
       instr);
   // This will return pointers to a generator in RAX and JIT data in RDX.
+#endif
 
   // Arbitrary scratch register for use in emitStoreGenYieldPoint(). Any
   // caller-saved register not used in this scope will do because we're on the
@@ -1137,8 +1154,8 @@ void translateSetupFrame(Environ* env, const Instruction*) {
     vecd_area_size += kPointerSize; // alignment padding
   }
   int arg_buffer_size = env->resume_frame_total_size -
-      env->resume_header_and_spill_size -
-      gp_save_count * kPointerSize - vecd_area_size;
+      env->resume_header_and_spill_size - gp_save_count * kPointerSize -
+      vecd_area_size;
   if (vecd_area_size + arg_buffer_size > 0) {
     as->sub(x86::rsp, vecd_area_size + arg_buffer_size);
   }
@@ -1147,15 +1164,13 @@ void translateSetupFrame(Environ* env, const Instruction*) {
   while (!vecd_saved_regs.Empty()) {
     auto reg = vecd_saved_regs.GetFirst();
     as->movaps(
-        x86::ptr(x86::rsp, xmm_offset),
-        x86::xmm(reg.loc - VECD_REG_BASE));
+        x86::ptr(x86::rsp, xmm_offset), x86::xmm(reg.loc - VECD_REG_BASE));
     xmm_offset += 16;
     vecd_saved_regs.RemoveFirst();
   }
 #else
   int arg_buffer_size = env->resume_frame_total_size -
-      env->resume_header_and_spill_size -
-      gp_save_count * kPointerSize;
+      env->resume_header_and_spill_size - gp_save_count * kPointerSize;
   if (arg_buffer_size > 0) {
     as->sub(x86::rsp, arg_buffer_size);
   }
