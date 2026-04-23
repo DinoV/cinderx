@@ -995,13 +995,41 @@ void translateEpilogueEnd(Environ* env, const Instruction* instr) {
     JIT_CHECK(
         env->last_callee_saved_reg_off != -1,
         "offset to callee saved regs not initialized");
-    // Point rsp at the bottom of the callee-saved area, then pop in
-    // reverse push order (GetLast→GetFirst) to restore registers.
+    // Point rsp at the bottom of the callee-saved area.
     as->lea(x86::rsp, x86::ptr(x86::rbp, -env->last_callee_saved_reg_off));
+#ifdef _WIN32
+    // On Windows, callee-saved XMM registers were saved with movaps and
+    // must be restored the same way. GP registers are restored with pop.
+    auto vecd_regs = saved_regs & ALL_VECD_REGISTERS;
+    auto gp_regs = saved_regs & ALL_GP_REGISTERS;
+    int xmm_offset = 0;
+    while (!vecd_regs.Empty()) {
+      auto reg = vecd_regs.GetFirst();
+      as->movaps(
+          x86::xmm(reg.loc - VECD_REG_BASE), x86::ptr(x86::rsp, xmm_offset));
+      xmm_offset += 16;
+      vecd_regs.RemoveFirst();
+    }
+    int vecd_count = (saved_regs & ALL_VECD_REGISTERS).count();
+    int gp_count = gp_regs.count();
+    int vecd_area_size = vecd_count * 16;
+    if (vecd_count > 0 && (gp_count * kPointerSize) % 16 != 0) {
+      vecd_area_size += kPointerSize;
+    }
+    if (vecd_area_size > 0) {
+      as->add(x86::rsp, vecd_area_size);
+    }
+    while (!gp_regs.Empty()) {
+      as->pop(x86::gpq(gp_regs.GetLast().loc));
+      gp_regs.RemoveLast();
+    }
+#else
+    // Pop in reverse push order (GetLast→GetFirst) to restore registers.
     while (!saved_regs.Empty()) {
       as->pop(x86::gpq(saved_regs.GetLast().loc));
       saved_regs.RemoveLast();
     }
+#endif
   }
   as->leave();
   as->ret();
