@@ -156,6 +156,15 @@ PyObject* _PyNumber_PowerNoMod(PyObject* lhs, PyObject* rhs);
 
 #include "cinderx/python_runtime.h"
 
+// Marks declarations that are exported from the Python DLL on Windows.
+// Needed to match CPython's PyAPI_FUNC(dllimport) declarations and avoid
+// -Winconsistent-dllimport warnings.
+#ifdef WIN32
+#define PyAPI_WIN __declspec(dllimport)
+#else
+#define PyAPI_WIN
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -264,10 +273,7 @@ _PyInterpreterFrame* Cix_PyThreadState_PushFrame(
     PyThreadState* tstate,
     size_t size);
 
-#ifdef WIN32
-__declspec(dllimport)
-#endif
-void Cix_PyThreadState_PopFrame(
+PyAPI_WIN void Cix_PyThreadState_PopFrame(
     PyThreadState* tstate,
     _PyInterpreterFrame* frame);
 
