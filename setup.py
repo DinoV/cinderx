@@ -476,10 +476,10 @@ class BuildExt(build_ext):
             cmake_output_name = f"{extension.name}.pyd"
         else:
             cmake_output_name = f"{extension.name}.so"
-        cmake_output = os.path.join(ext_dir, cmake_output_name)
+        cmake_output = os.path.join(self.build_temp, cmake_output_name)
         if os.path.exists(cmake_output) and cmake_output != ext_fullpath:
             print(f"Renaming {cmake_output} -> {ext_fullpath}")
-            shutil.move(cmake_output, ext_fullpath)
+            shutil.copy(cmake_output, ext_fullpath)
 
     def _find_python(self) -> str:
         # Normally this would use "data", but that goes to a temporary build directory
