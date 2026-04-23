@@ -264,6 +264,9 @@ _PyInterpreterFrame* Cix_PyThreadState_PushFrame(
     PyThreadState* tstate,
     size_t size);
 
+#ifdef WIN32
+__declspec(dllimport)
+#endif
 void Cix_PyThreadState_PopFrame(
     PyThreadState* tstate,
     _PyInterpreterFrame* frame);
