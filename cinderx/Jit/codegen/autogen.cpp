@@ -895,8 +895,10 @@ void translateResumeGenYield(Environ* env, const Instruction* instr) {
   // Resumed execution in this generator begins here
   as->bind(env->pending_yield_resume_label);
 
-  // Sent in value is in RSI, and tstate is in RCX from resume entry-point args
-  emitLoadResumedYieldInputs(as, instr, RSI, x86::rcx);
+  // Sent in value and tstate arrive in the argument registers for the
+  // GenResumeFunc signature: arg[1] = sent value, arg[3] = tstate.
+  emitLoadResumedYieldInputs(
+      as, instr, ARGUMENT_REGS[1], x86::gpq(ARGUMENT_REGS[3].loc));
 #elif defined(CINDER_AARCH64)
   a64::Builder* as = env->as;
 
