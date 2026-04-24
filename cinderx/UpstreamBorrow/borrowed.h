@@ -160,9 +160,9 @@ PyObject* _PyNumber_PowerNoMod(PyObject* lhs, PyObject* rhs);
 // Needed to match CPython's PyAPI_FUNC(dllimport) declarations and avoid
 // -Winconsistent-dllimport warnings.
 #ifdef WIN32
-#define PyAPI_WIN __declspec(dllimport)
+#define PyAPI_WIN(RTYPE) __declspec(dllimport) RTYPE
 #else
-#define PyAPI_WIN
+#define PyAPI_WIN(RTYPE) RTYPE
 #endif
 
 #ifdef __cplusplus
@@ -273,7 +273,7 @@ _PyInterpreterFrame* Cix_PyThreadState_PushFrame(
     PyThreadState* tstate,
     size_t size);
 
-PyAPI_WIN void Cix_PyThreadState_PopFrame(
+PyAPI_WIN(void) Cix_PyThreadState_PopFrame(
     PyThreadState* tstate,
     _PyInterpreterFrame* frame);
 
