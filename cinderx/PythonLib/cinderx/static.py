@@ -20,7 +20,6 @@ from _static import (
     is_static_callable,
     is_static_module,
     is_type_static,
-    lookup_native_symbol,
     make_context_decorator_wrapper,
     make_recreate_cm,
     PRIM_OP_ADD_DBL,
@@ -102,11 +101,13 @@ from _static import (
 )
 
 try:
-    from _cinderx import (
+    from _static import (
         _clear_dlopen_cache,
         _clear_dlsym_cache,
         _sizeof_dlopen_cache,
-        _sizeof_dlsym_cache
+        _sizeof_dlsym_cache,
+        lookup_native_symbol,
     )
+
 except ImportError:
     pass
