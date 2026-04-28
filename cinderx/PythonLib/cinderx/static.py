@@ -4,7 +4,6 @@
 from _cinderx import StaticTypeError
 from _static import (
     __build_cinder_class__,
-    _clear_dlopen_cache,
     _clear_dlsym_cache,
     _property_missing_fget,
     _property_missing_fset,
@@ -104,3 +103,8 @@ from _static import (
     TYPED_UINT64,
     TYPED_UINT8,
 )
+
+try:
+    from _cinderx import _clear_dlopen_cache
+except ImportError:
+    pass
