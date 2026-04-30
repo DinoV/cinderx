@@ -108,15 +108,12 @@ class JitListTest(unittest.TestCase):
 
         # This is _very_ fragile.  We're trying to compute what the line number of
         # `code_func` is going to be, before we create it.
-        # Use forward slashes so the JIT list parser doesn't choke on
-        # Windows paths like D:\a\... where the colon is ambiguous.
-        co_filename = victim_code.co_filename.replace("\\", "/")
         cinderx.jit.append_jit_list(
-            f"{victim_name}@{co_filename}:{victim_code.co_firstlineno}".replace(
+            f"{victim_name}@{victim_code.co_filename}:{victim_code.co_firstlineno}".replace(
                 "victim", "code_func"
             ).replace(
                 f"{victim_code.co_firstlineno}",
-                f"{victim_code.co_firstlineno + 21}",
+                f"{victim_code.co_firstlineno + 18}",
             )
         )
 
