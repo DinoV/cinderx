@@ -271,6 +271,16 @@ int rewriteVectorCallCommon(
   move->appendInput(instr->releaseInput(callable_input));
 
   constexpr PhyLocation TMP_REG = arch::reg_scratch_0_loc;
+
+  // If kwnames needs the stack, shift the args buffer past the shadow space
+  // and kwnames slot so they don't overlap.  Without this, with 5+ Python
+  // args the args array at RSP+8 extends past RSP+kShadowSpaceSize and
+  // writing kwnames there clobbers an arg.
+  size_t kwnames_idx = reg_offset + 3;
+  if (kwnames_idx >= ARGUMENT_REGS.size()) {
+    base_offset = std::max(base_offset, kShadowSpaceSize + (int)kPointerSize);
+  }
+
   int rsp_sub = prepareArgsArray(
       instr_iter,
       num_args,
@@ -281,7 +291,6 @@ int rewriteVectorCallCommon(
       base_offset);
 
   auto last_input = instr->releaseInput(instr->getNumInputs() - 1);
-  size_t kwnames_idx = reg_offset + 3;
   if (kwnames_idx < ARGUMENT_REGS.size()) {
     // kwnames fits in a register.
     if (last_input->isImm()) {
@@ -314,8 +323,9 @@ int rewriteVectorCallCommon(
     }
   } else {
     // kwnames doesn't fit in a register (Windows x64 with 5+ C-level args).
-    // Pass it on the stack at [RSP + kShadowSpaceSize], which is the first
-    // stack argument slot in the Windows x64 calling convention.
+    // Pass it at [RSP + kShadowSpaceSize] (first stack argument slot in
+    // the Windows x64 calling convention).  The args buffer was shifted
+    // past this slot via base_offset above.
     constexpr auto sp = arch::reg_stack_pointer_loc;
     int kwnames_stk_offset = kShadowSpaceSize;
     if (last_input->isImm()) {
@@ -330,8 +340,7 @@ int rewriteVectorCallCommon(
       insertMoveToMemoryLocation(
           block, instr_iter, sp, kwnames_stk_offset, last_input.get(), TMP_REG);
 
-      // Subtract kwnames tuple length from nargsf.  kwnames is on the stack,
-      // so load it into TMP_REG first.
+      // Subtract kwnames tuple length from nargsf.
       block->allocateInstrBefore(
           instr_iter,
           Instruction::kMove,
@@ -351,12 +360,11 @@ int rewriteVectorCallCommon(
           PhyReg(ARGUMENT_REGS[reg_offset + 2]),
           PhyReg(TMP_REG));
     }
-    // Ensure the arg buffer is large enough for shadow space + stack args.
-    int min_size = kShadowSpaceSize + kPointerSize;
-    if (min_size % 16 != 0) {
-      min_size += kPointerSize;
+    // Total stack = shifted base_offset + args buffer.
+    rsp_sub = base_offset + rsp_sub;
+    if (rsp_sub % kStackAlign != 0) {
+      rsp_sub += kStackAlign - (rsp_sub % kStackAlign);
     }
-    rsp_sub = std::max(rsp_sub, min_size);
   }
 
   return rsp_sub;
