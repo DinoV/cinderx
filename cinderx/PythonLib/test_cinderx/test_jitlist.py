@@ -108,12 +108,15 @@ class JitListTest(unittest.TestCase):
 
         # This is _very_ fragile.  We're trying to compute what the line number of
         # `code_func` is going to be, before we create it.
+        # Use forward slashes so the JIT list parser doesn't choke on
+        # Windows paths like D:\a\... where the colon is ambiguous.
+        co_filename = victim_code.co_filename.replace("\\", "/")
         cinderx.jit.append_jit_list(
-            f"{victim_name}@{victim_code.co_filename}:{victim_code.co_firstlineno}".replace(
+            f"{victim_name}@{co_filename}:{victim_code.co_firstlineno}".replace(
                 "victim", "code_func"
             ).replace(
                 f"{victim_code.co_firstlineno}",
-                f"{victim_code.co_firstlineno + 18}",
+                f"{victim_code.co_firstlineno + 21}",
             )
         )
 
@@ -177,7 +180,7 @@ class JitListTest(unittest.TestCase):
             env=subprocess_env(),
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(b"42\n", proc.stdout, proc.stdout)
+        self.assertEqual(b"42", proc.stdout.strip(), proc.stdout)
 
     def test_precompile_all(self) -> None:
         # Has to be run under a separate process because precompile_all will mess up the
@@ -220,10 +223,11 @@ class JitListTest(unittest.TestCase):
 
         entry = f"{victim.__module__}:{victim.__qualname__}".replace("victim", "func")
 
-        with tempfile.NamedTemporaryFile("w+") as jit_list_file:
-            jit_list_file.write(entry)
-            jit_list_file.flush()
-            cinderx.jit.read_jit_list(jit_list_file.name)
+        with tempfile.TemporaryDirectory() as tmp:
+            jit_list_path = os.path.join(tmp, "jitlist.txt")
+            with open(jit_list_path, "w") as f:
+                f.write(entry)
+            cinderx.jit.read_jit_list(jit_list_path)
 
         def func() -> int:
             return 35
@@ -250,10 +254,11 @@ class JitListTest(unittest.TestCase):
         with self.assertRaisesRegex(
             RuntimeError, r"Error while parsing line \d+ in JIT list file"
         ):
-            with tempfile.NamedTemporaryFile("w+") as jit_list_file:
-                jit_list_file.write("OH NO")
-                jit_list_file.flush()
-                cinderx.jit.read_jit_list(jit_list_file.name)
+            with tempfile.TemporaryDirectory() as tmp:
+                jit_list_path = os.path.join(tmp, "jitlist.txt")
+                with open(jit_list_path, "w") as f:
+                    f.write("OH NO")
+                cinderx.jit.read_jit_list(jit_list_path)
 
     def test_precompile_all_bad_args(self) -> None:
         with self.assertRaises(ValueError):
