@@ -754,13 +754,10 @@ void translateYieldInitial(Environ* env, const Instruction* instr) {
   as->lea(x86::rcx, x86::ptr(x86::rbp, env->win_struct_ret_offset));
   as->mov(x86::rdx, x86::ptr(x86::rbp, tstate.loc));
 
-  // Windows x64: reserve shadow space for the callee.
-  as->sub(x86::rsp, kShadowSpaceSize);
   emitCall(
       *env,
       reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
       instr);
-  as->add(x86::rsp, kShadowSpaceSize);
   // Both fields are in the struct buffer.
   as->mov(x86::rax, x86::ptr(x86::rbp, env->win_struct_ret_offset));
   as->mov(x86::rdx, x86::ptr(x86::rbp, env->win_struct_ret_offset + 8));
