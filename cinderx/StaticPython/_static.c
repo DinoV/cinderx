@@ -455,7 +455,7 @@ static PyObject* ctxmgrwrp_cb(
   return ctxmgrwrp_exit(result != NULL, NULL, result, awaitable->state);
 }
 
-extern int _PyObject_GetMethod(PyObject*, PyObject*, PyObject**);
+PyAPI_WIN(int) _PyObject_GetMethod(PyObject*, PyObject*, PyObject**);
 
 static PyObject* get_descr(PyObject* obj, PyObject* self) {
   descrgetfunc f = Py_TYPE(obj)->tp_descr_get;

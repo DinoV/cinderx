@@ -193,6 +193,12 @@ int _Ci_Instrument(PyCodeObject* co, PyInterpreterState* interp);
 Py_ssize_t _PyDict_LookupIndex(PyDictObject*, PyObject*);
 
 Py_ssize_t _PyDictKeys_StringLookupSplit(PyDictKeysObject* dk, PyObject* key);
+
+#include "internal/pycore_stackref.h"
+_PyStackRef _PyFloat_FromDouble_ConsumeInputs(
+    _PyStackRef left,
+    _PyStackRef right,
+    double value);
 #endif
 
 #define Cix_PyGen_yf _PyGen_yf

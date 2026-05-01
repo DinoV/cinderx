@@ -22,7 +22,7 @@
 
 int used_in_vtable(PyObject* value);
 
-extern int _PyObject_GetMethod(PyObject*, PyObject*, PyObject**);
+PyAPI_WIN(int) _PyObject_GetMethod(PyObject*, PyObject*, PyObject**);
 
 int get_func_or_special_callable(
     PyTypeObject* type,
