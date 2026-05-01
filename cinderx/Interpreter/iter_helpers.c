@@ -76,7 +76,7 @@ PyObject* Ci_GetANext(PyThreadState* tstate, PyObject* aiter) {
       return NULL;
     }
 
-    awaitable = Cix_PyCoro_GetAwaitableIter(next_iter);
+    awaitable = _PyCoro_GetAwaitableIter(next_iter);
     if (awaitable == NULL) {
       _PyErr_FormatFromCause(
           PyExc_TypeError,

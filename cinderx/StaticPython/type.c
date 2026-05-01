@@ -177,7 +177,7 @@ classloader_instantiate_generic(PyObject* gtd, PyObject* name, PyObject* path) {
       return NULL;
     }
     if (optional) {
-      PyObject* union_obj = Cix_Py_union_type_or(param, Py_None);
+      PyObject* union_obj = _Py_union_type_or(param, Py_None);
       if (union_obj == NULL) {
         Py_DECREF(tmp_tuple);
         return NULL;

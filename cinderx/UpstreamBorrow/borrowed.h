@@ -201,14 +201,9 @@ _PyStackRef _PyFloat_FromDouble_ConsumeInputs(
     double value);
 #endif
 
-#define Cix_PyGen_yf _PyGen_yf
-#define Cix_PyCoro_GetAwaitableIter _PyCoro_GetAwaitableIter
-#define Cix_Py_union_type_or _Py_union_type_or
 #define Cix_PyCode_InitAddressRange _PyCode_InitAddressRange
 #define Cix_PyLineTable_NextAddressRange _PyLineTable_NextAddressRange
-#define Cix_PyDict_LoadGlobal _PyDict_LoadGlobal
 #define Cix_PyThreadState_PushFrame _PyThreadState_PushFrame
-#define Cix_PyThreadState_PopFrame _PyThreadState_PopFrame
 #define Cix_PyFrame_ClearExceptCode _PyFrame_ClearExceptCode
 #define Cix_PyTypeAlias_Type _PyTypeAlias_Type
 
@@ -220,17 +215,10 @@ extern PyTypeObject _PyUnion_Type;
 extern PyTypeObject* Cix_PyUnion_Type;
 #endif
 
-PyAPI_WIN(PyObject*) Cix_PyGen_yf(PyGenObject* gen);
-PyAPI_WIN(PyObject*) Cix_PyCoro_GetAwaitableIter(PyObject* o);
 PyObject* Cix_PyAsyncGenValueWrapperNew(PyObject*);
 PyObject* Cix_compute_cr_origin(
     int origin_depth,
     _PyInterpreterFrame* current_frame);
-
-PyAPI_WIN(PyObject*) Cix_PyDict_LoadGlobal(
-    PyDictObject* globals,
-    PyDictObject* builtins,
-    PyObject* key);
 
 int Cix_PyObjectDict_SetItem(
     PyTypeObject* tp,
@@ -273,15 +261,9 @@ managed_static_type_state* Cix_PyStaticType_GetState(
     PyInterpreterState*,
     PyTypeObject*);
 
-PyAPI_WIN(PyObject*) Cix_Py_union_type_or(PyObject*, PyObject*);
-
 _PyInterpreterFrame* Cix_PyThreadState_PushFrame(
     PyThreadState* tstate,
     size_t size);
-
-PyAPI_WIN(void) Cix_PyThreadState_PopFrame(
-    PyThreadState* tstate,
-    _PyInterpreterFrame* frame);
 
 void Cix_PyFrame_ClearExceptCode(_PyInterpreterFrame* frame);
 
