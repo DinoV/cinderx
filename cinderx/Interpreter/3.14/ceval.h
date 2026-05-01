@@ -7,7 +7,20 @@
 int _Py_CheckRecursiveCallPy(PyThreadState* tstate);
 
 #include "cinderx/Interpreter/3.14/Includes/ceval_macros.h"
+
+// Temporarily undo the borrowed.h renames so that CPython's pycore_ceval.h
+// declares the original _PyEval_* names (satisfied by the Python library)
+// rather than our _CiEval_* names, which would conflict with the definitions
+// below (non-static decl + static-ish def, or dllimport decl + local def).
+#undef _PyEval_MonitorRaise
+#undef _PyEval_FrameClearAndPop
+#undef _PyEvalFramePushAndInit
+#undef _PyEvalFramePushAndInit_Ex
 #include "internal/pycore_ceval.h"
+#define _PyEval_MonitorRaise _CiEval_MonitorRaise
+#define _PyEval_FrameClearAndPop _CiEval_FrameClearAndPop
+#define _PyEvalFramePushAndInit _CiEvalFramePushAndInit
+#define _PyEvalFramePushAndInit_Ex _CiEvalFramePushAndInit_Ex
 #include "internal/pycore_stackref.h"
 #include "internal/pycore_unicodeobject.h"
 #include "internal/pycore_list.h"
@@ -345,7 +358,7 @@ no_tools_for_local_event(PyThreadState *tstate, _PyInterpreterFrame *frame, int 
         return no_tools_for_global_event(tstate, event);
     }
 }
-void
+static void
 _PyEval_MonitorRaise(PyThreadState *tstate, _PyInterpreterFrame *frame,
               _Py_CODEUNIT *instr)
 {
@@ -969,7 +982,7 @@ clear_gen_frame(PyThreadState *tstate, _PyInterpreterFrame * frame)
     _PyFrame_ClearExceptCode(frame);
     _PyErr_ClearExcState(&gen->gi_exc_state);
 }
-void
+static void
 _PyEval_FrameClearAndPop(PyThreadState *tstate, _PyInterpreterFrame * frame)
 {
     if (frame->owner == FRAME_OWNED_BY_THREAD) {
@@ -979,7 +992,7 @@ _PyEval_FrameClearAndPop(PyThreadState *tstate, _PyInterpreterFrame * frame)
         clear_gen_frame(tstate, frame);
     }
 }
-_PyInterpreterFrame *
+static _PyInterpreterFrame *
 _PyEvalFramePushAndInit(PyThreadState *tstate, _PyStackRef func,
                         PyObject *locals, _PyStackRef const* args,
                         size_t argcount, PyObject *kwnames, _PyInterpreterFrame *previous)
