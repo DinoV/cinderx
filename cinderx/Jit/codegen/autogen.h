@@ -86,11 +86,21 @@ class AutoTranslator {
 
   static arch::VecD getVecD(const jit::lir::OperandBase* op) {
 #if defined(CINDER_X86_64)
-    JIT_CHECK(op->getPhyRegister().is_fp_register(), "expected FP register");
-    return asmjit::x86::xmm(op->getPhyRegister().loc - VECD_REG_BASE);
+    auto data_type = op->dataType();
+    switch (data_type) {
+      case jit::lir::OperandBase::kDouble:
+        return asmjit::x86::xmm(op->getPhyRegister().loc - VECD_REG_BASE);
+      default:
+        JIT_ABORT("incorrect register type.");
+    }
 #elif defined(CINDER_AARCH64)
-    JIT_CHECK(op->getPhyRegister().is_fp_register(), "expected FP register");
-    return asmjit::a64::d(op->getPhyRegister().loc - VECD_REG_BASE);
+    auto data_type = op->dataType();
+    switch (data_type) {
+      case jit::lir::OperandBase::kDouble:
+        return asmjit::a64::d(op->getPhyRegister().loc - VECD_REG_BASE);
+      default:
+        JIT_ABORT("incorrect register type.");
+    }
 #else
     CINDER_UNSUPPORTED
 #endif
