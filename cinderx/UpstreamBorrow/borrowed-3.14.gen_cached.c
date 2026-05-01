@@ -7871,17 +7871,6 @@ _PyTraceBack_FromFrame(PyObject *tb_next, PyFrameObject *frame)
     return tb_create_raw((PyTracebackObject *)tb_next, frame, addr, -1);
 }
 
-_PyStackRef _PyFloat_FromDouble_ConsumeInputs(_PyStackRef left, _PyStackRef right, double value)
-{
-    PyStackRef_CLOSE_SPECIALIZED(left, _PyFloat_ExactDealloc);
-    PyStackRef_CLOSE_SPECIALIZED(right, _PyFloat_ExactDealloc);
-    PyObject *obj = PyFloat_FromDouble(value);
-    if (obj == NULL) {
-        return PyStackRef_NULL;
-    }
-    return PyStackRef_FromPyObjectSteal(obj);
-}
-
 // _PyCoroObject_CAST includes assert(PyCoro_CheckExact(op)) which fails
 // for JIT coroutines that have a different type. Replace with a plain cast.
 #undef _PyCoroObject_CAST

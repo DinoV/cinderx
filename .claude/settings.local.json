@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tg note *)",
+      "Bash(tg update *)"
+    ]
+  }
+}
