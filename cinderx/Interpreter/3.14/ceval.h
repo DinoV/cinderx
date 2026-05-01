@@ -16,6 +16,7 @@ int _Py_CheckRecursiveCallPy(PyThreadState* tstate);
 #undef _PyEval_FrameClearAndPop
 #undef _PyEvalFramePushAndInit
 #undef _PyEvalFramePushAndInit_Ex
+#undef _PyFloat_FromDouble_ConsumeInputs
 #include "internal/pycore_ceval.h"
 #include "internal/pycore_stackref.h"
 #include "internal/pycore_unicodeobject.h"
@@ -39,6 +40,7 @@ int _Py_CheckRecursiveCallPy(PyThreadState* tstate);
 #define _PyEval_FrameClearAndPop _CiEval_FrameClearAndPop
 #define _PyEvalFramePushAndInit _CiEvalFramePushAndInit
 #define _PyEvalFramePushAndInit_Ex _CiEvalFramePushAndInit_Ex
+#define _PyFloat_FromDouble_ConsumeInputs _CiFloat_FromDouble_ConsumeInputs
 
 #define _PyFunction_Vectorcall Ci_PyFunction_Vectorcall
 
