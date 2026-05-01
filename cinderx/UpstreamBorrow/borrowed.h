@@ -33,8 +33,6 @@
 #define _PyEval_Vector _CiEval_Vector
 // PyObject* _PyExc_CreateExceptionGroup(const char* msg_str, PyObject* excs);
 
-#define _PyFloat_FromDouble_ConsumeInputs _CiFloat_FromDouble_ConsumeInputs
-
 #define _PyInstrumentation_MISSING (*Cix_monitoring_missing)
 #define _PyInstrumentation_DISABLE (*Cix_monitoring_disable)
 
@@ -102,8 +100,6 @@
 #define _Py_Specialize_LoadSuperAttr _Ci_Specialize_LoadSuperAttr
 #define _PyEval_MonitorRaise _CiEval_MonitorRaise
 #define _PyEval_FrameClearAndPop _CiEval_FrameClearAndPop
-#define _PyEvalFramePushAndInit _CiEvalFramePushAndInit
-#define _PyEvalFramePushAndInit_Ex _CiEvalFramePushAndInit_Ex
 #define _PyType_Validate _CiType_Validate
 #define _Py_Specialize_Call _Ci_Specialize_Call
 #define _PyTraceBack_FromFrame _CiTraceBack_FromFrame
@@ -194,11 +190,6 @@ Py_ssize_t _PyDict_LookupIndex(PyDictObject*, PyObject*);
 
 Py_ssize_t _PyDictKeys_StringLookupSplit(PyDictKeysObject* dk, PyObject* key);
 
-#include "internal/pycore_stackref.h"
-_PyStackRef _PyFloat_FromDouble_ConsumeInputs(
-    _PyStackRef left,
-    _PyStackRef right,
-    double value);
 #endif
 
 #define Cix_PyCode_InitAddressRange _PyCode_InitAddressRange
