@@ -6,6 +6,7 @@
 
 // clang-format off
 #include "internal/pycore_pyerrors.h"
+#include "internal/pycore_genobject.h"
 
 PyObject* Ci_GetAIter(PyThreadState* tstate, PyObject* obj) {
   unaryfunc getter = NULL;

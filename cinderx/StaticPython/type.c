@@ -10,6 +10,8 @@
 #include "cinderx/UpstreamBorrow/borrowed.h"
 #include "cinderx/module_c_state.h"
 
+#include "internal/pycore_unionobject.h"
+
 Py_ssize_t _PyClassLoader_PrimitiveTypeToSize(int primitive_type) {
   switch (primitive_type) {
     case TYPED_INT8:
