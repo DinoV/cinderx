@@ -33,6 +33,10 @@
 #define _PyEval_Vector _CiEval_Vector
 // PyObject* _PyExc_CreateExceptionGroup(const char* msg_str, PyObject* excs);
 
+#ifndef _WIN32
+#define _PyFloat_FromDouble_ConsumeInputs _CiFloat_FromDouble_ConsumeInputs
+#endif
+
 #define _PyInstrumentation_MISSING (*Cix_monitoring_missing)
 #define _PyInstrumentation_DISABLE (*Cix_monitoring_disable)
 
@@ -189,6 +193,12 @@ int _Ci_Instrument(PyCodeObject* co, PyInterpreterState* interp);
 Py_ssize_t _PyDict_LookupIndex(PyDictObject*, PyObject*);
 
 Py_ssize_t _PyDictKeys_StringLookupSplit(PyDictKeysObject* dk, PyObject* key);
+
+#include "internal/pycore_stackref.h"
+_PyStackRef _PyFloat_FromDouble_ConsumeInputs(
+    _PyStackRef left,
+    _PyStackRef right,
+    double value);
 
 #endif
 
