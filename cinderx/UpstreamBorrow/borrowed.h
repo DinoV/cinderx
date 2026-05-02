@@ -80,7 +80,6 @@
 #define _Py_call_instrumentation_jump _Ci_call_instrumentation_jump
 #define _Py_call_instrumentation_instruction \
   _Ci_call_instrumentation_instruction
-#define _Py_Instrumentation_GetLine _Ci_Instrumentation_GetLine
 #define _Py_call_instrumentation_line _Ci_call_instrumentation_line
 #define _Py_call_instrumentation_exc2 _Ci_call_instrumentation_exc2
 #define _PyNumber_InPlacePowerNoMod _CiNumber_InPlacePowerNoMod
@@ -153,15 +152,6 @@ PyObject* _PyNumber_PowerNoMod(PyObject* lhs, PyObject* rhs);
 #include "internal/pycore_typeobject.h"
 
 #include "cinderx/python_runtime.h"
-
-// Marks declarations that are exported from the Python DLL on Windows.
-// Needed to match CPython's PyAPI_FUNC(dllimport) declarations and avoid
-// -Winconsistent-dllimport warnings.
-#ifdef WIN32
-#define PyAPI_WIN(RTYPE) __declspec(dllimport) RTYPE
-#else
-#define PyAPI_WIN(RTYPE) RTYPE
-#endif
 
 #ifdef __cplusplus
 extern "C" {
