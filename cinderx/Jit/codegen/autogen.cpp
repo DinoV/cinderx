@@ -735,99 +735,6 @@ void translateLoadThreadState(Environ* env, const Instruction* instr) {
 #endif
 }
 
-void translateYieldInitial(Environ* env, const Instruction* instr) {
-#if defined(CINDER_X86_64)
-  arch::Builder* as = env->as;
-
-  // Load tstate into RDI for call to
-  // JITRT_UnlinkGenFrameAndReturnGenDataFooter.
-
-  // Consider avoiding reloading the tstate in from memory if it was already in
-  // a register before spilling. Still needs to be in memory though so it can be
-  // recovered after calling JITRT_MakeGenObject* which will trash it.
-  PhyLocation tstate = instr->getInput(0)->getStackSlot();
-
-#ifdef _WIN32
-  // On Windows x64, std::pair<ptr,ptr> is returned via a hidden first pointer
-  // argument.  Use the pre-allocated struct return buffer in the frame (at
-  // env->win_struct_ret_offset from RBP) to avoid dynamic RSP adjustments.
-  as->lea(x86::rcx, x86::ptr(x86::rbp, env->win_struct_ret_offset));
-  as->mov(x86::rdx, x86::ptr(x86::rbp, tstate.loc));
-
-  emitCall(
-      *env,
-      reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
-      instr);
-  // Both fields are in the struct buffer.
-  as->mov(x86::rax, x86::ptr(x86::rbp, env->win_struct_ret_offset));
-  as->mov(x86::rdx, x86::ptr(x86::rbp, env->win_struct_ret_offset + 8));
-#else
-  as->mov(x86::rdi, x86::ptr(x86::rbp, tstate.loc));
-
-  emitCall(
-      *env,
-      reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
-      instr);
-  // This will return pointers to a generator in RAX and JIT data in RDX.
-#endif
-
-  // Arbitrary scratch register for use in emitStoreGenYieldPoint(). Any
-  // caller-saved register not used in this scope will do because we're on the
-  // exit path now.
-  auto scratch_r = x86::r9;
-  env->pending_yield_resume_label = as->newLabel();
-  emitStoreGenYieldPoint(
-      as,
-      env,
-      instr,
-      env->pending_yield_resume_label,
-      x86::rdx,
-      scratch_r,
-      false /* is_yield_from */);
-
-  // The jmp to exit and resume label binding are handled by separate
-  // kBranchToYieldExit and kResumeGenYield instructions.
-#elif defined(CINDER_AARCH64)
-  arch::Builder* as = env->as;
-
-  // Load tstate into X0 for call to
-  // JITRT_UnlinkGenFrameAndReturnGenDataFooter.
-
-  // Consider avoiding reloading the tstate in from memory if it was already in
-  // a register before spilling. Still needs to be in memory though so it can be
-  // recovered after calling JITRT_MakeGenObject* which will trash it.
-  PhyLocation tstate = instr->getInput(0)->getStackSlot();
-  as->ldr(
-      a64::x0,
-      arch::ptr_resolve(as, arch::fp, tstate.loc, arch::reg_scratch_0));
-
-  emitCall(
-      *env,
-      reinterpret_cast<uint64_t>(JITRT_UnlinkGenFrameAndReturnGenDataFooter),
-      instr);
-  // This will return pointers to a generator in X0 and JIT data in X1.
-
-  // Arbitrary scratch register for use in emitStoreGenYieldPoint(). Any
-  // caller-saved register not used in this scope will do because we're on the
-  // exit path now.
-  auto scratch_r = arch::reg_scratch_0;
-  env->pending_yield_resume_label = as->newLabel();
-  emitStoreGenYieldPoint(
-      as,
-      env,
-      instr,
-      env->pending_yield_resume_label,
-      a64::x1,
-      scratch_r,
-      false /* is_yield_from */);
-
-  // The jmp to exit and resume label binding are handled by separate
-  // kBranchToYieldExit and kResumeGenYield instructions.
-#else
-  CINDER_UNSUPPORTED
-#endif
-}
-
 void translateStoreGenYieldPoint(Environ* env, const Instruction* instr) {
 #if defined(CINDER_X86_64)
   arch::Builder* as = env->as;
@@ -2578,9 +2485,6 @@ void AutoTranslator::translateInstr(Environ* env, const Instruction* instr)
     case Instruction::kLoadThreadState:
       translateLoadThreadState(env, instr);
       return;
-    case Instruction::kYieldInitial:
-      translateYieldInitial(env, instr);
-      return;
     case Instruction::kStoreGenYieldPoint:
       translateStoreGenYieldPoint(env, instr);
       return;
@@ -3027,9 +2931,6 @@ void AutoTranslator::translateInstr(Environ* env, const Instruction* instr)
       return;
     case Instruction::kLoadThreadState:
       translateLoadThreadState(env, instr);
-      return;
-    case Instruction::kYieldInitial:
-      translateYieldInitial(env, instr);
       return;
     case Instruction::kStoreGenYieldPoint:
       translateStoreGenYieldPoint(env, instr);
