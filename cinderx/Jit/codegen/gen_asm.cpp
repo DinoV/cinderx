@@ -1168,6 +1168,11 @@ void NativeGenerator::generateCode(
     as_->bind(env_.static_arg_typecheck_failed_label);
 
 #if defined(CINDER_X86_64)
+#ifdef _WIN32
+    // Reserve shadow space: this stub runs with only the minimal frame
+    // (push rbp / mov rbp, rsp). leave restores rsp from rbp afterward.
+    as_->sub(x86::rsp, kShadowSpaceSize);
+#endif
     if (GetFunction()->returnsPrimitive()) {
       if (GetFunction()->returnsPrimitiveDouble()) {
         as_->call(

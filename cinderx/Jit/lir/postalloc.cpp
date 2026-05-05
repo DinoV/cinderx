@@ -412,8 +412,9 @@ RewriteResult rewriteCallInstrs(instr_iter_t instr_iter, Environ* env) {
   int base_offset = 0;
   if (instr->isVarArgCall()) {
     int rsp_sub = rewriteVarArgCall(instr_iter, base_offset);
-    env->max_arg_buffer_size =
-        std::max<int>(env->max_arg_buffer_size, base_offset + rsp_sub);
+    env->max_arg_buffer_size = std::max<int>(
+        env->max_arg_buffer_size,
+        std::max(base_offset + rsp_sub, kShadowSpaceSize));
     return kChanged;
   } else if (!instr->isCall() && !instr->isVectorCallTstate()) {
     return kUnchanged;
@@ -421,6 +422,8 @@ RewriteResult rewriteCallInstrs(instr_iter_t instr_iter, Environ* env) {
 
   auto output = instr->output();
   if (instr->isCall() && instr->getNumInputs() == 1 && output->isNone()) {
+    env->max_arg_buffer_size =
+        std::max<int>(env->max_arg_buffer_size, kShadowSpaceSize);
     return kUnchanged;
   }
 

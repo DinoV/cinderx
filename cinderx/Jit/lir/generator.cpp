@@ -675,6 +675,17 @@ void GenerateArgcountCheckBlocks(
         Instruction::kBranchZ, nullptr, Lbl{argcount_check});
     kw_dispatch->addSuccessor(argcount_check);
 
+    // Windows x64: reserve shadow space for the callee. These calls run
+    // before the full frame is allocated, so there is no arg buffer yet.
+    // prologue_exit does leave;ret which restores rsp from rbp.
+    if constexpr (codegen::kShadowSpaceSize > 0) {
+      kw_dispatch->allocateInstr(
+          Instruction::kLea,
+          nullptr,
+          OutPhyReg{codegen::arch::reg_stack_pointer_loc},
+          Ind(codegen::arch::reg_stack_pointer_loc,
+              -codegen::kShadowSpaceSize));
+    }
     kw_dispatch->allocateInstr(
         Instruction::kCall,
         nullptr,
@@ -712,6 +723,14 @@ void GenerateArgcountCheckBlocks(
     auto helper = returns_primitive_double
         ? reinterpret_cast<uint64_t>(JITRT_CallWithIncorrectArgcountFPReturn)
         : reinterpret_cast<uint64_t>(JITRT_CallWithIncorrectArgcount);
+    if constexpr (codegen::kShadowSpaceSize > 0) {
+      argcount_check->allocateInstr(
+          Instruction::kLea,
+          nullptr,
+          OutPhyReg{codegen::arch::reg_stack_pointer_loc},
+          Ind(codegen::arch::reg_stack_pointer_loc,
+              -codegen::kShadowSpaceSize));
+    }
     argcount_check->allocateInstr(Instruction::kCall, nullptr, Imm{helper});
     argcount_check->allocateInstr(
         Instruction::kBranch, nullptr, AsmLbl{prologue_exit});
@@ -723,6 +742,14 @@ void GenerateArgcountCheckBlocks(
 
     emitAnnotation(kw_dispatch, "Keyword argument dispatch (varargs/kwonly)");
 
+    if constexpr (codegen::kShadowSpaceSize > 0) {
+      kw_dispatch->allocateInstr(
+          Instruction::kLea,
+          nullptr,
+          OutPhyReg{codegen::arch::reg_stack_pointer_loc},
+          Ind(codegen::arch::reg_stack_pointer_loc,
+              -codegen::kShadowSpaceSize));
+    }
     kw_dispatch->allocateInstr(
         Instruction::kCall,
         nullptr,
@@ -767,6 +794,16 @@ void GeneratePrimitiveArgsPrologueBlock(
   auto helper = returns_primitive_double
       ? reinterpret_cast<uint64_t>(JITRT_CallStaticallyWithPrimitiveSignatureFP)
       : reinterpret_cast<uint64_t>(JITRT_CallStaticallyWithPrimitiveSignature);
+  // Windows x64: reserve shadow space before the call. This runs before the
+  // full frame is allocated. prologue_exit does leave;ret to restore rsp.
+  if constexpr (codegen::kShadowSpaceSize > 0) {
+    block->allocateInstr(
+        Instruction::kLea,
+        nullptr,
+        OutPhyReg{codegen::arch::reg_stack_pointer_loc},
+        Ind(codegen::arch::reg_stack_pointer_loc,
+            -codegen::kShadowSpaceSize));
+  }
   block->allocateInstr(Instruction::kCall, nullptr, Imm{helper});
 
   // The helper either handled the call (result in return register) and we
