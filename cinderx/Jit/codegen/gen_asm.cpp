@@ -669,6 +669,15 @@ void* NativeGenerator::getVectorcallEntry() {
   lir::LIRGenerator lirgen(GetFunction(), &env_);
   std::unique_ptr<lir::Function> lir_func;
 
+  int frame_header_size = frameHeaderSize(func_->code) + sizeof(void*);;
+  int reserved_stack_space = frame_header_size + inline_stack_size_;
+
+#if defined(CINDER_X86_64) && defined(_WIN32)
+  constexpr int multi_value_return_buffer_size = 16;
+  reserved_stack_space += multi_value_return_buffer_size;
+  env_.win_struct_ret_offset = -reserved_stack_space;
+#endif
+
   COMPILE_TIMER(
       GetFunction()->compilation_phase_timer,
       "Lowering into LIR",
@@ -697,11 +706,7 @@ void* NativeGenerator::getVectorcallEntry() {
       "DeadCodeElimination",
       eliminateDeadCode(lir_func.get()))
 
-  int frame_header_size = frameHeaderSize(func_->code);
-  frame_header_size += sizeof(void*);
-
-  LinearScanAllocator lsalloc(
-      lir_func.get(), frame_header_size + inline_stack_size_);
+  LinearScanAllocator lsalloc(lir_func.get(), reserved_stack_space);
 
   COMPILE_TIMER(
       GetFunction()->compilation_phase_timer,
