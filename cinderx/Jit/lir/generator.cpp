@@ -2533,7 +2533,8 @@ LIRGenerator::TranslatedBlock LIRGenerator::TranslateOneBasicBlock(
               PyUnicode_AsUTF8(code->co_filename),
               PyUnicode_AsUTF8(code->co_name));
         }
-        bbb.appendCallInstruction(
+        appendCall2RetValues(
+            bbb,
             instr->output(),
             LoadTypeMethodCache::lookupHelper,
             cache_entry,
