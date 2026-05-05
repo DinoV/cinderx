@@ -678,6 +678,11 @@ void* NativeGenerator::getVectorcallEntry() {
 
 #if defined(CINDER_X86_64) && defined(_WIN32)
   constexpr int multi_value_return_buffer_size = 16;
+  // Align the struct return buffer start to 16 bytes so that MSVC-compiled
+  // callees can use aligned stores (movaps/movdqa) for the return value.
+  if (reserved_stack_space % kStackAlign != 0) {
+    reserved_stack_space += kStackAlign - (reserved_stack_space % kStackAlign);
+  }
   reserved_stack_space += multi_value_return_buffer_size;
   env_.win_struct_ret_offset = -reserved_stack_space;
 #endif
@@ -862,10 +867,32 @@ NativeGenerator::FrameInfo NativeGenerator::computeFrameInfo() {
       .saved_regs = env_.changed_regs & CALLEE_SAVE_REGS,
       .arg_buffer_size = env_.max_arg_buffer_size + env_.reserve_stack_size,
   };
+#if defined(CINDER_X86_64) && defined(_WIN32)
+  // Windows x64: callee-saved XMM registers are saved via movaps which
+  // requires 16-byte alignment. The XMM save address is
+  //   rbp - header_and_spill_size - gp_push_size - vecd_area
+  // saved_regs_size() ensures (gp_push_size + vecd_area) % 16 == 0,
+  // so header_and_spill_size must also be 16-aligned.
+  bool has_vecd_saves = (info.saved_regs & ALL_VECD_REGISTERS).count() > 0;
+  if (has_vecd_saves) {
+    if (info.header_and_spill_size % kStackAlign) {
+      info.header_and_spill_size +=
+          kStackAlign - (info.header_and_spill_size % kStackAlign);
+    }
+  }
+#endif
   if ((info.header_and_spill_size + info.saved_regs_size() +
        info.arg_buffer_size) %
       kStackAlign) {
+#if defined(CINDER_X86_64) && defined(_WIN32)
+    if (has_vecd_saves) {
+      info.arg_buffer_size += kPointerSize;
+    } else {
+      info.header_and_spill_size += kPointerSize;
+    }
+#else
     info.header_and_spill_size += kPointerSize;
+#endif
   }
   spill_stack_size_ = env_.shadow_frames_and_spill_size;
   env_.last_callee_saved_reg_off =
