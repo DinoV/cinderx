@@ -2358,7 +2358,7 @@ class StrictLoaderTest(StrictTestBase):
                 stderr=subprocess.STDOUT,
             )
             self.assertEqual(res.returncode, 0)
-            output = res.stdout.decode()
+            output = res.stdout.decode().replace("\r\n", "\n")
             self.assertEqual(output, "hi\n")
 
     def test_strict_loader_stub_path_x_arg(self) -> None:
@@ -2408,7 +2408,7 @@ class StrictLoaderTest(StrictTestBase):
                 stderr=subprocess.STDOUT,
             )
             self.assertEqual(res.returncode, 0)
-            output = res.stdout.decode()
+            output = res.stdout.decode().replace("\r\n", "\n")
             self.assertEqual(output, "hi\n")
 
     def test_clear_classloader_cache_on_aborted_import(self):
