@@ -147,8 +147,6 @@ struct Environ {
   UnorderedMap<const hir::BeginInlinedFunction*, lir::Instruction*>
       inline_frame_map;
 
-  FrameMode frame_mode;
-
   int max_arg_buffer_size{0};
 
   // Size of stack space reserved by ReserveStack instructions. This space

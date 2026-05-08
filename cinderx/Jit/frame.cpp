@@ -139,9 +139,6 @@ void setIP(
     [[maybe_unused]] int frame_size,
     [[maybe_unused]] uintptr_t new_ip) {
 #if defined(__x86_64__) && defined(ENABLE_LIGHTWEIGHT_FRAMES)
-  JIT_CHECK(
-      getConfig().frame_mode == FrameMode::kLightweight,
-      "setIP requires lightweight frame mode");
   JIT_CHECK(isJitFrame(frame), "frame not executed by the JIT");
   uintptr_t frame_base;
   if (isGeneratorFrame(frame)) {
@@ -184,6 +181,7 @@ std::vector<_PyInterpreterFrame*> getUnitFrames(_PyInterpreterFrame* frame) {
 }
 
 UnitState getUnitState(_PyInterpreterFrame* frame) {
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   std::vector<_PyInterpreterFrame*> unit_frames = getUnitFrames(frame);
   auto logUnitFrames = [&unit_frames] {
     JIT_LOG("Unit frames (increasing order of inline depth):");
@@ -278,6 +276,10 @@ UnitState getUnitState(_PyInterpreterFrame* frame) {
 #endif
 
   return unit_state;
+#else
+  throw std::runtime_error{
+      "updatePrevInstr: Lightweight frames are not supported"};
+#endif
 }
 
 void updatePrevInstr(_PyInterpreterFrame* frame) {
@@ -347,16 +349,14 @@ PyType_Slot framereifier_type_slots[] = {
 
 Ref<> makeFrameReifier([[maybe_unused]] BorrowedRef<PyCodeObject> code) {
 #if PY_VERSION_HEX >= 0x030E0000 && defined(ENABLE_LIGHTWEIGHT_FRAMES)
-  if (getConfig().frame_mode == FrameMode::kLightweight) {
-    PyObject* reifier =
-        PyUnstable_MakeJITExecutable(reifyRunningFrame, code, nullptr);
-    if (reifier == nullptr) {
-      PyErr_Print();
-      throw std::runtime_error(
-          fmt::format("failed to make reifier {}", codeQualname(code)));
-    }
-    return Ref<>::steal(reifier);
+  PyObject* reifier =
+      PyUnstable_MakeJITExecutable(reifyRunningFrame, code, nullptr);
+  if (reifier == nullptr) {
+    PyErr_Print();
+    throw std::runtime_error(
+        fmt::format("failed to make reifier {}", codeQualname(code)));
   }
+  return Ref<>::steal(reifier);
 #endif
   return nullptr;
 }
@@ -433,9 +433,7 @@ void jitFramePopulateFrame([[maybe_unused]] _PyInterpreterFrame* frame) {
 #endif
   frame->frame_obj = nullptr;
   frame->return_offset = 0;
-  if (!(code->co_flags & kCoFlagsAnyGenerator)) {
-    frame->owner = FRAME_OWNED_BY_THREAD;
-  }
+  frame->owner = FRAME_OWNED_BY_THREAD;
   int free_offset = code->co_nlocalsplus - numFreevars(code);
   Ci_STACK_TYPE* localsplus = &frame->localsplus[0];
   for (std::size_t i = 0; i < free_offset; i++) {
@@ -444,9 +442,6 @@ void jitFramePopulateFrame([[maybe_unused]] _PyInterpreterFrame* frame) {
   }
 
   jitFrameGetHeader(frame)->rtfs |= JIT_FRAME_INITIALIZED;
-#else
-  throw std::runtime_error{
-      "jitFramePopulateFrame: Lightweight frames are not supported"};
 #endif
 }
 
@@ -481,9 +476,6 @@ void jitFrameRemoveReifier(_PyInterpreterFrame* frame) {
     setFrameFunction(frame, Py_NewRef(func));
   }
 #endif
-#else
-  throw std::runtime_error{
-      "jitFrameRemoveReifier: Lightweight frames are not supported"};
 #endif
 }
 
@@ -509,19 +501,15 @@ _PyInterpreterFrame* convertInterpreterFrameFromStackToSlab(
 }
 
 FrameHeader* jitFrameGetHeader(_PyInterpreterFrame* frame) {
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   if (_PyFrame_GetCode(frame)->co_flags & kCoFlagsAnyGenerator) {
     PyGenObject* gen = _PyGen_GetGeneratorFromFrame(frame);
     auto footer = jitGenDataFooter(gen);
     return (FrameHeader*)&footer->frame_header;
   }
   return reinterpret_cast<FrameHeader*>(frame) - 1;
-#else
-  throw std::runtime_error{
-      "jitFrameGetHeader: Lightweight frames are not supported"};
-#endif
 }
 
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
 void jitFrameSetFunction(_PyInterpreterFrame* frame, PyFunctionObject* func) {
   jitFrameGetHeader(frame)->func = func;
 }
@@ -544,6 +532,7 @@ RuntimeFrameState* jitFrameGetRtfs(_PyInterpreterFrame* frame) {
 bool hasRtfsFunction(_PyInterpreterFrame* frame) {
   return jitFrameGetHeader(frame)->rtfs & JIT_FRAME_RTFS;
 }
+#endif
 
 void jitFrameInitLightweight(
     [[maybe_unused]] PyThreadState* tstate,
@@ -573,9 +562,11 @@ void jitFrameInitLightweight(
 #endif
   setFrameCode(frame, reifier);
   setFrameFunction(frame, (PyObject*)Py_NewRef(func));
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   jitFrameGetHeader(frame)->rtfs = 0;
 #if defined(CINDER_AARCH64)
   jitFrameGetHeader(frame)->deopt_idx = 0;
+#endif
 #endif
 #else
   frame->stacktop = 0;
@@ -632,14 +623,12 @@ void jitFrameInit(
     _frameowner owner,
     _PyInterpreterFrame* previous,
     PyObject* reifier) {
-  if (getConfig().frame_mode == FrameMode::kLightweight) {
-    jitFrameInitLightweight(
-        tstate, frame, func, code, owner, previous, reifier);
-    return;
-  }
-
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
+  jitFrameInitLightweight(tstate, frame, func, code, owner, previous, reifier);
+#else
   jitFrameInitNormal(
       tstate, frame, func, code, null_locals_from, owner, previous);
+#endif
 }
 
 size_t jitFrameGetSize(PyCodeObject* code) {
@@ -657,11 +646,7 @@ void jitFrameClearExceptCode(_PyInterpreterFrame* frame) {
   // crucial that this frame has been unlinked, and is no longer visible:
   JIT_DCHECK(currentFrame(PyThreadState_Get()) != frame, "wrong current frame");
 
-  if (getConfig().frame_mode != FrameMode::kLightweight) {
-    _PyFrame_ClearExceptCode(frame);
-    return;
-  }
-
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   // If we've already been requested by the runtime to initialize this
   // _PyInterpreterFrame then we just fall back to its implementation to
   // handle the clearing.
@@ -688,6 +673,9 @@ void jitFrameClearExceptCode(_PyInterpreterFrame* frame) {
     jitFrameGetHeader(frame)->rtfs = JIT_FRAME_INITIALIZED;
   }
 #endif
+#else
+  _PyFrame_ClearExceptCode(frame);
+#endif
 }
 
 RuntimeFrameState runtimeFrameStateFromThreadState(PyThreadState* tstate) {
@@ -698,9 +686,6 @@ RuntimeFrameState runtimeFrameStateFromThreadState(PyThreadState* tstate) {
 
 void deoptAllJitFramesOnStack() {
 #if defined(__x86_64__) && defined(ENABLE_LIGHTWEIGHT_FRAMES)
-  if (getConfig().frame_mode != FrameMode::kLightweight) {
-    return;
-  }
   PyInterpreterState* interp = PyInterpreterState_Get();
 
   // In free-threaded builds, other threads are actively running and may be

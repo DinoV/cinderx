@@ -120,23 +120,22 @@ int jitgen_traverse(PyObject* obj, visitproc visit, void* arg) {
       JIT_CHECK(JitGen_CheckAny(obj), "Deopted during GC traversal");
     }
 
-#if PY_VERSION_HEX < 0x030E0000
+#if PY_VERSION_HEX < 0x030E0000 && defined(ENABLE_LIGHTWEIGHT_FRAMES)
     // In lightweight frame mode, frame->f_funcobj is set to a reifier singleton
     // rather than the actual function. The real function is stored in the
     // FrameHeader and contains func_closure with closure cells that may
     // participate in reference cycles. We must visit it explicitly since
     // _PyFrame_Traverse won't see it.
-    if (getConfig().frame_mode == FrameMode::kLightweight &&
-        jit_gen->gi_frame_state < FRAME_CLEARED) {
+    if (jit_gen->gi_frame_state < FRAME_CLEARED) {
       _PyInterpreterFrame* frame = generatorFrame(jit_gen);
       BorrowedRef<PyFunctionObject> func = jitFrameGetFunction(frame);
       Py_VISIT(func.get());
     }
 #endif
   }
-  // Try to use CPython traverse as much as we can as it has internals which
-  // are hard to borrow in 3.14 (compares 'visit' to a specific internal
-  // function).
+  // Try to use CPython traverse as much as we can as it has internals
+  // which are hard to borrow in 3.14 (compares 'visit' to a specific
+  // internal function).
   return PyGen_Type.tp_traverse(obj, visit, arg);
 }
 
@@ -150,9 +149,10 @@ void raise_already_running_exception(JitGenObject* jit_gen) {
   PyErr_SetString(PyExc_ValueError, msg);
 }
 
-// Resumes a JIT generator. Calling this performs the same work as invoking the
-// interpreter on a generator with a freshly created/suspended frame. As much
-// as possible is broken out into C++ before control is passed to JIT code.
+// Resumes a JIT generator. Calling this performs the same work as invoking
+// the interpreter on a generator with a freshly created/suspended frame. As
+// much as possible is broken out into C++ before control is passed to JIT
+// code.
 Ref<> send_core(JitGenObject* jit_gen, PyObject* arg, PyThreadState* tstate) {
   PyObject* gen_obj = reinterpret_cast<PyObject*>(jit_gen);
   GenDataFooter* gen_footer = jit_gen->genDataFooter();
@@ -201,8 +201,8 @@ Ref<> send_core(JitGenObject* jit_gen, PyObject* arg, PyThreadState* tstate) {
 // This is a cut down version of gen_send_ex2() from genobject.c which only
 // handles sending in values, and calls send_core() above to dispatch to a
 // JIT function rather than executing with the interpreter. If any of the
-// inputs would lead to an exception, try to deopt and hand back to the CPython
-// version.
+// inputs would lead to an exception, try to deopt and hand back to the
+// CPython version.
 PySendResult jitgen_am_send(PyObject* obj, PyObject* arg, PyObject** presult) {
   JitGenObject* gen = JitGenObject::cast(obj);
   if (gen == nullptr) {
@@ -326,11 +326,11 @@ PyObject* jitgen_iternext(PyObject* obj) {
 // Cached methods from base generator filled in by init_jit_genobject_type().
 // These are unlikely to be performance sensitive and don't need to run
 // particularly fast so we could do dynamic lookups. However, the obvious way
-// of doing this is to first deopt and then do a method call. Deopting on throw
-// or close isn't too bad, but doing so on __sizeof__() is a bit dubious as the
-// generator may end up in the interpreter unnecessarily. So, I made the
-// machinery to cache methods anyway and we may as well use it. This does all
-// make the assumption that the methods on PyGen_Type don't change.
+// of doing this is to first deopt and then do a method call. Deopting on
+// throw or close isn't too bad, but doing so on __sizeof__() is a bit dubious
+// as the generator may end up in the interpreter unnecessarily. So, I made
+// the machinery to cache methods anyway and we may as well use it. This does
+// all make the assumption that the methods on PyGen_Type don't change.
 using GenThrowMeth = PyObject* (*)(PyObject * obj,
                                    PyObject* const* args,
                                    Py_ssize_t nargs);
@@ -409,8 +409,8 @@ void jitgen_finalize(PyObject* obj) {
   }
 
   // Slow-path: generator is still running, so we deopt and defer to runtime
-  // logic for raising errors/warnings and possibly closing the generator (which
-  // would require a deopt anyway).
+  // logic for raising errors/warnings and possibly closing the generator
+  // (which would require a deopt anyway).
   JIT_CHECK(deopt_jit_gen(obj), "Tried to finalize a running JIT generator");
   PyGen_Type.tp_finalize(obj);
 }
@@ -788,19 +788,19 @@ void deopt_jit_gen_object_only(JitGenObject* gen) {
       : &PyCoro_Type;
   Py_DECREF(old_type);
   Py_SET_TYPE(reinterpret_cast<PyObject*>(gen), type);
-  if (getConfig().frame_mode == FrameMode::kLightweight) {
-    auto frame = generatorFrame(gen);
-    if (gen->gi_frame_state != FRAME_CLEARED) {
-      jitFrameRemoveReifier(frame);
-    } else if constexpr (PY_VERSION_HEX < 0x030E0000) {
-      // Normally we'll clear the function via jitFrameClearExceptCode. But
-      // a user can call clear on a reified frame object which transfers
-      // ownership of the _PyInterpreterFrame to the PyFrameObject and marks
-      // the generator frame as cleared. In that case we still need to decref
-      // the function which is stored before the _PyInterpreterFrame in 3.12.
-      Py_XDECREF(jitFrameGetFunction(frame));
-    }
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
+  auto frame = generatorFrame(gen);
+  if (gen->gi_frame_state != FRAME_CLEARED) {
+    jitFrameRemoveReifier(frame);
+  } else if constexpr (PY_VERSION_HEX < 0x030E0000) {
+    // Normally we'll clear the function via jitFrameClearExceptCode. But
+    // a user can call clear on a reified frame object which transfers
+    // ownership of the _PyInterpreterFrame to the PyFrameObject and marks
+    // the generator frame as cleared. In that case we still need to decref
+    // the function which is stored before the _PyInterpreterFrame in 3.12.
+    Py_XDECREF(jitFrameGetFunction(frame));
   }
+#endif
 }
 
 bool deopt_jit_gen(PyObject* obj) {
@@ -825,9 +825,7 @@ bool deopt_jit_gen(PyObject* obj) {
         deopt_meta.inline_depth() == 0,
         "inline functions not supported for generators");
     auto frame = generatorFrame(jit_gen);
-    if (getConfig().frame_mode == FrameMode::kLightweight) {
-      jitFramePopulateFrame(frame);
-    }
+    jitFramePopulateFrame(frame);
     reifyGeneratorFrame(
         frame, deopt_meta, deopt_meta.innermostFrame(), gen_footer);
     // Ownership of references has been transferred from JIT to interpreter.

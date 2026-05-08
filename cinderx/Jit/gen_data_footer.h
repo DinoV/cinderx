@@ -56,10 +56,8 @@ struct GenDataFooter {
   // JIT metadata for associated code object
   CodeRuntime* code_rt{nullptr};
 
-#if defined(ENABLE_LIGHTWEIGHT_FRAMES)
   // Frame header used for tracking the current frame.
   FrameHeader frame_header;
-#endif
 };
 
 GenDataFooter** jitGenDataFooterPtr(PyGenObject* gen, PyCodeObject* gen_code);

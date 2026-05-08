@@ -34,6 +34,12 @@ struct FrameHeader {
   };
 };
 
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
+inline constexpr size_t kFrameHeaderOverhead = sizeof(FrameHeader);
+#else
+inline constexpr size_t kFrameHeaderOverhead = 0;
+#endif
+
 #define JIT_FRAME_RTFS 0x01
 #define JIT_FRAME_INITIALIZED 0x02
 #define JIT_FRAME_DEOPT_PATCHED 0x04

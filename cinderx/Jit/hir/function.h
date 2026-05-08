@@ -47,8 +47,6 @@ class Function {
   // Return type
   Type return_type{TObject};
 
-  FrameMode frameMode{FrameMode::kNormal};
-
   CFG cfg;
 
   Environment env;
