@@ -7,17 +7,20 @@
 #include "cinderx/Common/ref.h"
 #include "cinderx/Jit/codegen/arch/detection.h"
 
+#include <cstddef>
+#include <cstdint>
+
 namespace jit {
 
 int frameHeaderSize(BorrowedRef<PyCodeObject> code);
 
 // FrameHeader lives at the beginning of the stack frame for JIT-compiled
 // functions.  This is followed by the _PyInterpreterFrame.
+//
+// On aarch64 deopt_idx is placed first so that func/rtfs is adjacent to the
+// _PyInterpreterFrame fields that follow, enabling consecutive stores via
+// VariadicStore during frame initialization.
 struct FrameHeader {
-  union {
-    PyFunctionObject* func;
-    uintptr_t rtfs;
-  };
 #if defined(CINDER_AARCH64)
   // Index into the CodeRuntime's deopt metadata array. Used to recover the
   // current bytecode offset for frame introspection (e.g. sys._current_frames).
@@ -25,6 +28,10 @@ struct FrameHeader {
   // IP-based symbolizer approach instead.
   std::size_t deopt_idx;
 #endif
+  union {
+    PyFunctionObject* func;
+    uintptr_t rtfs;
+  };
 };
 
 #define JIT_FRAME_RTFS 0x01

@@ -1,0 +1,166 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+#pragma once
+
+#include "cinderx/python.h"
+
+#include "cinderx/Common/py-portability.h"
+#include "cinderx/Common/util.h"
+#include "cinderx/Jit/frame_header.h"
+#include "cinderx/Jit/lir/type.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace jit::lir {
+
+// Describes what to store for each _PyInterpreterFrame / FrameHeader field
+// during lightweight frame setup. Offsets are relative to the
+// _PyInterpreterFrame pointer (negative for FrameHeader fields).
+
+enum class FrameFieldKind : uint8_t {
+  kExecutable,
+  kPrevFrame,
+  kFuncObj,
+  kFrameReifier,
+  kInstrPtr,
+  kStackPointer,
+  kZero,
+  kOwnerThread,
+};
+
+constexpr const char* frameFieldKindName(FrameFieldKind kind) {
+  switch (kind) {
+    case FrameFieldKind::kExecutable:
+      return "executable";
+    case FrameFieldKind::kPrevFrame:
+      return "previous";
+    case FrameFieldKind::kFuncObj:
+      return "funcobj";
+    case FrameFieldKind::kFrameReifier:
+      return "frame_reifier";
+    case FrameFieldKind::kInstrPtr:
+      return "instr_ptr";
+    case FrameFieldKind::kStackPointer:
+      return "stackpointer";
+    case FrameFieldKind::kZero:
+      return "zero";
+    case FrameFieldKind::kOwnerThread:
+      return "owner";
+  }
+  return "unknown";
+}
+
+struct FrameFieldInit {
+  int32_t offset;
+  FrameFieldKind kind;
+  DataType data_type;
+};
+
+struct FrameStoreGroup {
+  uint8_t start;
+  uint8_t count;
+};
+
+inline constexpr size_t kMaxFrameFields = 16;
+inline constexpr size_t kMaxFrameGroups = 16;
+
+struct FrameInitTable {
+  std::array<FrameFieldInit, kMaxFrameFields> fields{};
+  size_t num_fields{0};
+  std::array<FrameStoreGroup, kMaxFrameGroups> groups{};
+  size_t num_groups{0};
+};
+
+// Version-specific field kinds, resolved at compile time.
+#if PY_VERSION_HEX >= 0x030E0000
+inline constexpr auto kFrameHeaderFuncKind = FrameFieldKind::kZero;
+inline constexpr auto kFuncObjKind = FrameFieldKind::kFuncObj;
+inline constexpr auto kExecutableKind = FrameFieldKind::kFrameReifier;
+#else
+inline constexpr auto kFrameHeaderFuncKind = FrameFieldKind::kFuncObj;
+inline constexpr auto kFuncObjKind = FrameFieldKind::kFrameReifier;
+inline constexpr auto kExecutableKind = FrameFieldKind::kExecutable;
+#endif
+
+consteval FrameInitTable buildFrameInitTable() {
+  FrameInitTable t;
+
+  auto add = [&](int32_t offset, FrameFieldKind kind, DataType dt) {
+    t.fields[t.num_fields++] = {offset, kind, dt};
+  };
+
+  // All offsets are relative to the _PyInterpreterFrame pointer.
+  // FrameHeader fields have negative offsets.
+  constexpr int32_t fh = -static_cast<int32_t>(sizeof(jit::FrameHeader));
+
+  add(fh + static_cast<int32_t>(offsetof(jit::FrameHeader, func)),
+      kFrameHeaderFuncKind,
+      DataType::kObject);
+  add(FRAME_EXECUTABLE_OFFSET, kExecutableKind, DataType::kObject);
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, previous)),
+      FrameFieldKind::kPrevFrame,
+      DataType::kObject);
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, f_funcobj)),
+      kFuncObjKind,
+      DataType::kObject);
+  add(FRAME_INSTR_OFFSET, FrameFieldKind::kInstrPtr, DataType::kObject);
+
+#if PY_VERSION_HEX >= 0x030E0000
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, f_locals)),
+      FrameFieldKind::kZero,
+      DataType::kObject);
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, stackpointer)),
+      FrameFieldKind::kStackPointer,
+      DataType::kObject);
+#endif
+
+#ifdef Py_GIL_DISABLED
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, tlbc_index)),
+      FrameFieldKind::kZero,
+      DataType::k32bit);
+#endif
+
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, owner)),
+      FrameFieldKind::kOwnerThread,
+      DataType::k8bit);
+
+  // Sort by offset (insertion sort for consteval compatibility).
+  for (size_t i = 1; i < t.num_fields; i++) {
+    auto key = t.fields[i];
+    size_t j = i;
+    while (j > 0 && t.fields[j - 1].offset > key.offset) {
+      t.fields[j] = t.fields[j - 1];
+      j--;
+    }
+    t.fields[j] = key;
+  }
+
+  // Compute groups of consecutive pointer-sized stores.
+  size_t i = 0;
+  while (i < t.num_fields) {
+    if (t.fields[i].data_type != DataType::kObject) {
+      t.groups[t.num_groups++] = {
+          static_cast<uint8_t>(i), static_cast<uint8_t>(1)};
+      i++;
+      continue;
+    }
+    size_t start = i;
+    int32_t next_offset = t.fields[i].offset + kPointerSize;
+    i++;
+    while (i < t.num_fields && t.fields[i].data_type == DataType::kObject &&
+           t.fields[i].offset == next_offset) {
+      next_offset += kPointerSize;
+      i++;
+    }
+    t.groups[t.num_groups++] = {
+        static_cast<uint8_t>(start), static_cast<uint8_t>(i - start)};
+  }
+
+  return t;
+}
+
+inline constexpr FrameInitTable kFrameInitTable = buildFrameInitTable();
+
+} // namespace jit::lir

@@ -37,6 +37,7 @@ extern "C" {
 #include "cinderx/Jit/inline_cache.h"
 #include "cinderx/Jit/jit_rt.h"
 #include "cinderx/Jit/lir/block_builder.h"
+#include "cinderx/Jit/lir/interpframe.h"
 #include "cinderx/Jit/threaded_compile.h"
 #include "cinderx/StaticPython/checked_dict.h"
 #include "cinderx/StaticPython/checked_list.h"
@@ -4841,7 +4842,7 @@ void LIRGenerator::emitLoadFrame(BasicBlockBuilder& bbb) {
 #endif
 
     // Lightweight frame linking: populate all _PyInterpreterFrame
-    // fields inline, following the BeginInlinedFunction pattern.
+    // fields inline using the compile-time frame init table.
     bbb.annotateNext("Lightweight frame: load thread state");
     env_->asm_tstate =
         bbb.appendInstr(OutVReg{}, Instruction::kLoadThreadState);
@@ -4854,74 +4855,7 @@ void LIRGenerator::emitLoadFrame(BasicBlockBuilder& bbb) {
         Stk{PhyLocation(
             static_cast<int32_t>(-fh_size + sizeof(jit::FrameHeader)))});
 
-    // Store FrameHeader
-    bbb.annotateNext("Lightweight frame: store frame header");
-#if PY_VERSION_HEX >= 0x030E0000
-    // Store rtfs = 0 in FrameHeader
-    bbb.appendInstr(
-        OutInd{
-            frame,
-            static_cast<Py_ssize_t>(offsetof(jit::FrameHeader, func)) -
-                static_cast<Py_ssize_t>(sizeof(jit::FrameHeader))},
-        Instruction::kMove,
-        Imm{0});
-#else
-    // Store func in FrameHeader (with incref)
-    Instruction* func_for_header =
-        bbb.appendInstr(OutVReg{}, Instruction::kMove, env_->asm_func);
-    bbb.appendInstr(
-        OutInd{
-            frame,
-            static_cast<Py_ssize_t>(offsetof(jit::FrameHeader, func)) -
-                static_cast<Py_ssize_t>(sizeof(jit::FrameHeader))},
-        Instruction::kMove,
-        func_for_header);
-    makeIncref(bbb, func_for_header, false);
-#endif
-
-    // Store f_executable
-    bbb.annotateNext("Set _PyInterpreterFrame::f_executable/f_code");
-#if PY_VERSION_HEX >= 0x030E0000
-    BorrowedRef<> reifier = env_->code_rt->reifier();
-    PyObject* executable = reifier.get();
-    if (executable == nullptr) {
-      executable = reinterpret_cast<PyObject*>(func_->code.get());
-    }
-#else
-    PyObject* executable = reinterpret_cast<PyObject*>(func_->code.get());
-#endif
-    Instruction* executable_reg =
-        bbb.appendInstr(OutVReg{}, Instruction::kMove, executable);
-    bbb.appendInstr(
-        OutInd{frame, FRAME_EXECUTABLE_OFFSET},
-        Instruction::kMove,
-        executable_reg);
-    if (!_Py_IsImmortal(executable)) {
-      makeIncref(bbb, executable_reg, false);
-    }
-
-    // Store f_funcobj
-    bbb.annotateNext("Set _PyInterpreterFrame::f_funcobj");
-#if PY_VERSION_HEX >= 0x030E0000
-    // 3.14+: f_funcobj = func (with incref)
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, f_funcobj)},
-        Instruction::kMove,
-        env_->asm_func);
-    makeIncref(bbb, env_->asm_func, false);
-#else
-    // 3.12-3.13: f_funcobj = frame_reifier (immortal)
-    PyObject* frame_reifier = cinderx::getModuleState()->frame_reifier;
-    Instruction* reifier_reg =
-        bbb.appendInstr(OutVReg{}, Instruction::kMove, frame_reifier);
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, f_funcobj)},
-        Instruction::kMove,
-        reifier_reg);
-#endif
-
-    // Store previous = tstate->current_frame
-    bbb.annotateNext("Set _PyInterpreterFrame::previous");
+    // Load previous frame from tstate before we overwrite current_frame.
 #if PY_VERSION_HEX >= 0x030D0000
     Instruction* prev_frame = bbb.appendInstr(
         OutVReg{},
@@ -4937,66 +4871,137 @@ void LIRGenerator::emitLoadFrame(BasicBlockBuilder& bbb) {
         Instruction::kMove,
         Ind{cframe_reg, offsetof(_PyCFrame, current_frame)});
 #endif
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, previous)},
-        Instruction::kMove,
-        prev_frame);
 
-    // Store prev_instr / instr_ptr
-    bbb.annotateNext("Set _PyInterpreterFrame::prev_instr");
+    PyObject* code_obj = reinterpret_cast<PyObject*>(func_->code.get());
+    // On 3.14 the reifier is stored in the executable field, on earlier
+    // versions we store the code object. We only emit one or the other
+    // and that's controlled by the data in interpframe.h which controls
+    // the initialization layout and order.
+    Instruction* executable_or_reifier = nullptr;
+    BorrowedRef<> executable_or_reifier_obj = nullptr;
+
+    // Materialize each field value into a vreg.
+    Instruction* zero_reg = nullptr;
+    auto fieldVReg = [&](FrameFieldKind kind, DataType dt) -> Instruction* {
+      switch (kind) {
+        case FrameFieldKind::kExecutable:
+          JIT_DCHECK(
+              executable_or_reifier == nullptr ||
+                  executable_or_reifier_obj == code_obj,
+              "should only be emitted once");
+          executable_or_reifier_obj = code_obj;
+          executable_or_reifier =
+              bbb.appendInstr(OutVReg{}, Instruction::kMove, code_obj);
+          return executable_or_reifier;
+        case FrameFieldKind::kPrevFrame:
+          return prev_frame;
+        case FrameFieldKind::kFuncObj:
+          return env_->asm_func;
+        case FrameFieldKind::kFrameReifier:
+          if constexpr (PY_VERSION_HEX >= 0x030E0000) {
+            JIT_DCHECK(
+                executable_or_reifier == nullptr,
+                "should only be emitted once");
+            executable_or_reifier_obj = env_->code_rt->reifier();
+            executable_or_reifier = bbb.appendInstr(
+                OutVReg{}, Instruction::kMove, executable_or_reifier_obj.get());
+            return executable_or_reifier;
+          } else {
+            // 3.12 the reifier ends up in the f_funcobj field and is immortal
+            JIT_DCHECK(
+                _Py_IsImmortal(cinderx::getModuleState()->frame_reifier),
+                "Reifier must be immortal");
+            return bbb.appendInstr(
+                OutVReg{},
+                Instruction::kMove,
+                cinderx::getModuleState()->frame_reifier.get());
+          }
+        case FrameFieldKind::kInstrPtr:
+          _Py_CODEUNIT* code_start;
+          if constexpr (PY_VERSION_HEX >= 0x030E0000) {
+            code_start = _PyCode_CODE(func_->code.get());
+          } else {
+            code_start = _PyCode_CODE(func_->code.get()) - 1;
+          }
+          return bbb.appendInstr(OutVReg{}, Instruction::kMove, code_start);
+        case FrameFieldKind::kStackPointer:
 #if PY_VERSION_HEX >= 0x030E0000
-    _Py_CODEUNIT* code_start = _PyCode_CODE(func_->code.get());
+          return bbb.appendInstr(
+              OutVReg{},
+              Instruction::kLea,
+              Stk{PhyLocation(
+                  static_cast<int32_t>(
+                      -fh_size + sizeof(jit::FrameHeader) +
+                      offsetof(_PyInterpreterFrame, localsplus)))});
 #else
-    _Py_CODEUNIT* code_start = _PyCode_CODE(func_->code.get()) - 1;
+          return bbb.appendInstr(
+              OutVReg{dt},
+              Instruction::kMove,
+              Imm{static_cast<uint64_t>(func_->code->co_nlocalsplus), dt});
 #endif
-    Instruction* code_start_reg =
-        bbb.appendInstr(OutVReg{}, Instruction::kMove, code_start);
-    bbb.appendInstr(
-        OutInd{frame, FRAME_INSTR_OFFSET}, Instruction::kMove, code_start_reg);
+        case FrameFieldKind::kZero:
+        case FrameFieldKind::kOwnerThread:
+          static_assert(
+              FRAME_OWNED_BY_THREAD == 0, "FRAME_OWNED_BY_THREAD has changed");
+          if (zero_reg == nullptr) {
+            zero_reg =
+                bbb.appendInstr(OutVReg{dt}, Instruction::kMove, Imm{0, dt});
+          }
+          return zero_reg;
+      }
+      JIT_ABORT("Unexpected FrameFieldKind");
+    };
 
-#ifdef Py_GIL_DISABLED
-    bbb.annotateNext("Set _PyInterpreterFrame::store tlbc_index");
-    // Store tlbc_index = 0
-    bbb.appendInstr(
-        OutInd{
-            frame,
-            offsetof(_PyInterpreterFrame, tlbc_index),
-            OperandBase::k32bit},
-        Instruction::kMove,
-        Imm{0, OperandBase::k32bit});
-#endif
+    auto emitSingleStore = [&](const FrameFieldInit& field) {
+      bbb.annotateNext(fmt::format("Store {}", frameFieldKindName(field.kind)));
+      auto val = fieldVReg(field.kind, field.data_type);
+      bbb.appendInstr(
+          OutInd{frame, field.offset, field.data_type},
+          Instruction::kMove,
+          val);
+    };
 
-    // Store owner = FRAME_OWNED_BY_THREAD
-    bbb.annotateNext("Set _PyInterpreterFrame::owner");
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, owner), OperandBase::k8bit},
-        Instruction::kMove,
-        Imm{static_cast<uint8_t>(FRAME_OWNED_BY_THREAD), OperandBase::k8bit});
+    // Emit stores using the compile-time grouped table.
+    constexpr auto& table = kFrameInitTable;
+    for (size_t gi = 0; gi < table.num_groups; gi++) {
+      auto group = table.groups[gi];
+      if (group.count > 1) {
+        uint8_t j = 0;
+        while (j + 1 < group.count) {
+          auto& f0 = table.fields[group.start + j];
+          auto& f1 = table.fields[group.start + j + 1];
+          bbb.annotateNext(
+              fmt::format(
+                  "Store {}, {}",
+                  frameFieldKindName(f0.kind),
+                  frameFieldKindName(f1.kind)));
+          auto val1 = fieldVReg(f0.kind, f0.data_type);
+          auto val2 = fieldVReg(f1.kind, f1.data_type);
+          bbb.appendInstr(
+              Instruction::kStorePair,
+              Imm{static_cast<uint64_t>(f0.offset)},
+              frame,
+              val1,
+              val2);
+          j += 2;
+        }
+        if (j < group.count) {
+          emitSingleStore(table.fields[group.start + j]);
+        }
+      } else {
+        emitSingleStore(table.fields[group.start]);
+      }
+    }
 
-#if PY_VERSION_HEX >= 0x030E0000
-    bbb.annotateNext("Set _PyInterpreterFrame::localsplus");
-    // Store stackpointer = &localsplus[0]
-    Instruction* localsplus = bbb.appendInstr(
-        OutVReg{},
-        Instruction::kLea,
-        Stk{PhyLocation(
-            static_cast<int32_t>(
-                -fh_size + sizeof(jit::FrameHeader) +
-                offsetof(_PyInterpreterFrame, localsplus)))});
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, stackpointer)},
-        Instruction::kMove,
-        localsplus);
+    // Incref fields that need it.
+    bbb.annotateNext("Incref execuctable / reifier");
+    if (!_Py_IsImmortal(executable_or_reifier_obj)) {
+      makeIncref(bbb, executable_or_reifier, false);
+    }
+    bbb.annotateNext("Incref func");
+    makeIncref(bbb, env_->asm_func, false);
 
-    // Store f_locals = NULL
-    bbb.annotateNext("Set _PyInterpreterFrame::f_locals");
-    bbb.appendInstr(
-        OutInd{frame, offsetof(_PyInterpreterFrame, f_locals)},
-        Instruction::kMove,
-        Imm{0});
-#endif
-
-    // Link frame into tstate
+    // Link frame into tstate.
     bbb.annotateNext("Set _PyInterpreterFrame as topmost frame");
 #if PY_VERSION_HEX >= 0x030D0000
     bbb.appendInstr(
