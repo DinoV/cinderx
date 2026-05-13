@@ -3306,6 +3306,12 @@ int initialize() {
     patchSysSetProfileAndSetTrace(mod);
   }
 
+#ifndef ENABLE_LIGHTWEIGHT_FRAMES
+  // Patch f_lineno on PyFrame_Type so that JIT frames lazily compute
+  // their line number from debug info instead of relying on instr_ptr.
+  patchFrameLinenoGetter();
+#endif
+
   getMutableConfig().state = State::kRunning;
 
   mod_state->jit_list = std::move(jit_list);

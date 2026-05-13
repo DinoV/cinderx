@@ -87,4 +87,9 @@ Ref<> makeFrameReifier(BorrowedRef<PyCodeObject> code);
 // are used.
 void deoptAllJitFramesOnStack();
 
+// Patch PyFrame_Type.tp_getset so that f_lineno lazily computes the line
+// number for JIT frames using debug info instead of relying on instr_ptr.
+// Call once during module initialization.
+void patchFrameLinenoGetter();
+
 } // namespace jit

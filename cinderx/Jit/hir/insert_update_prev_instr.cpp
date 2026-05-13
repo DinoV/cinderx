@@ -80,7 +80,7 @@ void InsertUpdatePrevInstr::Run([[maybe_unused]] Function& func) {
   std::unordered_map<BeginInlinedFunction*, BeginInlinedFunction*> parents;
 
   worklist.emplace(func.cfg.entry_block, nullptr);
-  [[maybe_unused]] bool inited_once = false;
+  bool inited_once = false;
   while (!worklist.empty()) {
     auto cur = worklist.top();
     auto block = cur.block;
@@ -145,9 +145,7 @@ void InsertUpdatePrevInstr::Run([[maybe_unused]] Function& func) {
         parent = begin;
         last_emitted = nullptr;
         prev_emitted_lno_or_bc = INT_MAX;
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
         inited_once = false;
-#endif
       } else if (instr.IsEndInlinedFunction()) {
         parent =
             parents[static_cast<EndInlinedFunction&>(instr).matchingBegin()];
@@ -155,11 +153,13 @@ void InsertUpdatePrevInstr::Run([[maybe_unused]] Function& func) {
         prev_emitted_lno_or_bc = INT_MAX;
       }
 
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
       // The first LoadEvalBreaker is emitted for the RESUME instruction which
       // indicates when we should update the line number from the instruction
       // - 1 to the first instruction to indicate that the frame is now
-      // complete.
+      // complete.  With LW frames this is needed so the reifier sees a
+      // complete frame.  Without LW frames the lazy f_lineno getter handles
+      // line numbers, but we still need the RESUME update so CPython's
+      // _PyFrame_IsIncomplete() returns false for the running frame.
       if (!inited_once && instr.IsLoadEvalBreaker()) {
         auto target_code = parent == nullptr ? func.code : parent->code();
         auto& cur_bc_idx_to_line = code_bc_idx_map.at(target_code);
@@ -173,12 +173,6 @@ void InsertUpdatePrevInstr::Run([[maybe_unused]] Function& func) {
 
         inited_once = true;
       }
-#else
-      if (hasArbitraryExecution(instr)) {
-        update_one();
-        last_emitted = nullptr;
-      }
-#endif
     }
 
     // Add the successors to be processed

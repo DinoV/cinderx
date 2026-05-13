@@ -31,6 +31,8 @@ enum class FrameFieldKind : uint8_t {
   kZero,
   kOwnerThread,
   kFrameHeaderFunc,
+  // Sentinel value (0xFFFF) stored in return_offset to identify JIT frames.
+  kReturnOffsetSentinel,
 };
 
 constexpr const std::string_view frameFieldKindName(FrameFieldKind kind) {
@@ -57,6 +59,8 @@ constexpr const std::string_view frameFieldKindName(FrameFieldKind kind) {
       return "owner";
     case FrameFieldKind::kFrameHeaderFunc:
       return "frame_header_func";
+    case FrameFieldKind::kReturnOffsetSentinel:
+      return "return_offset_sentinel";
   }
   return "unknown";
 }
@@ -150,6 +154,10 @@ consteval FrameInitTable buildFrameInitTable() {
 #ifndef ENABLE_LIGHTWEIGHT_FRAMES
   // Without ENABLE_LIGHTWEIGHT_FRAMES there is no lazy reification so
   // we must initialize every field the interpreter expects.
+  // Sentinel in return_offset identifies JIT frames for isJitFrame().
+  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, return_offset)),
+      FrameFieldKind::kReturnOffsetSentinel,
+      DataType::k16bit);
   add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, f_globals)),
       FrameFieldKind::kGlobals,
       DataType::kObject);
@@ -160,9 +168,6 @@ consteval FrameInitTable buildFrameInitTable() {
       FrameFieldKind::kZero,
       DataType::kObject);
 
-  add(static_cast<int32_t>(offsetof(_PyInterpreterFrame, return_offset)),
-      FrameFieldKind::kZero,
-      DataType::k16bit);
 #if PY_VERSION_HEX >= 0x030E0000
   // ugly, visited is a bitfield on debug builds and we can't use offset of on
   // it.

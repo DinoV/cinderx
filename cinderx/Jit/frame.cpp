@@ -57,7 +57,7 @@ int reifyRunningFrame(_PyInterpreterFrame* frame, PyObject* reifier) {
 
 bool isJitFrame(_PyInterpreterFrame* frame) {
 #ifdef ENABLE_LIGHTWEIGHT_FRAMES
-
+  // With LW frames the reifier in f_executable identifies JIT frames.
 #if PY_VERSION_HEX >= 0x030E0000
   PyObject* code = PyStackRef_AsPyObjectBorrow(frame->f_executable);
   return PyUnstable_JITExecutable_Check(code) &&
@@ -65,9 +65,10 @@ bool isJitFrame(_PyInterpreterFrame* frame) {
 #else
   return frameFunction(frame) == cinderx::getModuleState()->frame_reifier;
 #endif
-
 #else
-  throw std::runtime_error{"isJitFrame: Lightweight frames are not supported"};
+  // Without LW frames, JIT frames are identified by a sentinel in
+  // return_offset.  No extra field initialization needed for LW builds.
+  return frame->return_offset == kJitReturnOffsetSentinel;
 #endif
 }
 
@@ -94,7 +95,6 @@ uintptr_t getFrameBaseFromOnStackFrame(_PyInterpreterFrame* frame) {
 }
 
 uintptr_t getIP(_PyInterpreterFrame* frame, int frame_size) {
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   JIT_CHECK(isJitFrame(frame), "frame not executed by the JIT");
   uintptr_t frame_base;
   if (isGeneratorFrame(frame)) {
@@ -120,9 +120,6 @@ uintptr_t getIP(_PyInterpreterFrame* frame, int frame_size) {
       reinterpret_cast<uintptr_t*>(frame_base - frame_size - kPointerSize);
   memcpy(&ip, saved_ip, kPointerSize);
   return ip;
-#else
-  throw std::runtime_error{"getIP: Lightweight frames are not supported"};
-#endif
 }
 #endif
 
@@ -149,7 +146,6 @@ void setIP(
 // Collect all the frames in the unit, with the frame for the
 // non-inlined function as the first element in the return vector.
 std::vector<_PyInterpreterFrame*> getUnitFrames(_PyInterpreterFrame* frame) {
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   std::vector<_PyInterpreterFrame*> frames;
   while (frame != nullptr) {
     if (!isJitFrame(frame)) {
@@ -166,14 +162,9 @@ std::vector<_PyInterpreterFrame*> getUnitFrames(_PyInterpreterFrame* frame) {
   }
   // We've walked entire stack without finding the non-inlined frame.
   JIT_ABORT("couldn't find non-inlined frame");
-#else
-  throw std::runtime_error{
-      "getUnitFrames: Lightweight frames are not supported"};
-#endif
 }
 
 UnitState getUnitState(_PyInterpreterFrame* frame) {
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   std::vector<_PyInterpreterFrame*> unit_frames = getUnitFrames(frame);
   auto logUnitFrames = [&unit_frames] {
     JIT_LOG("Unit frames (increasing order of inline depth):");
@@ -268,10 +259,6 @@ UnitState getUnitState(_PyInterpreterFrame* frame) {
 #endif
 
   return unit_state;
-#else
-  throw std::runtime_error{
-      "updatePrevInstr: Lightweight frames are not supported"};
-#endif
 }
 
 void updatePrevInstr(_PyInterpreterFrame* frame) {
@@ -747,6 +734,80 @@ void deoptAllJitFramesOnStack() {
 #endif
 
 #endif
+}
+
+// ---------------------------------------------------------------------------
+// Custom f_lineno getter — lazily computes line numbers for JIT frames
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The original f_lineno getter saved during patching.
+getter s_original_lineno_getter = nullptr;
+
+// Compute the line number for a JIT frame using debug info.
+// Returns -1 if the line cannot be determined.
+int jitFrameGetLineNumber(_PyInterpreterFrame* iframe) {
+#if defined(CINDER_X86_64)
+  CodeRuntime* code_rt = getCodeRuntime(iframe);
+  if (code_rt == nullptr) {
+    return -1;
+  }
+  uintptr_t ip = getIP(iframe, code_rt->frameSize());
+  auto locs = code_rt->debugInfo()->getUnitCallStack(ip);
+  if (!locs.has_value() || locs->empty()) {
+    return -1;
+  }
+  // The outermost entry (index 0) corresponds to this frame.
+  // CodeObjLoc::lineNumber() calls PyCode_Addr2Line with the
+  // correct byte offset.
+  return locs->at(0).lineNo();
+#elif defined(CINDER_AARCH64)
+  CodeRuntime* code_rt = getCodeRuntime(iframe);
+  if (code_rt == nullptr) {
+    return -1;
+  }
+  std::size_t deopt_idx = jitFrameGetHeader(iframe)->deopt_idx;
+  auto locs = code_rt->getUnitCallStackFromDeoptIdx(deopt_idx);
+  if (!locs.has_value() || locs->empty()) {
+    return -1;
+  }
+  return locs->at(0).lineNo();
+#else
+  return -1;
+#endif
+}
+
+PyObject* jitFrameLinenoGetter(PyObject* self, void* closure) {
+  PyFrameObject* frame_obj = reinterpret_cast<PyFrameObject*>(self);
+  _PyInterpreterFrame* iframe = frame_obj->f_frame;
+
+  // Only intercept for JIT frames that are still running (not yet cleared).
+  if (iframe != nullptr && isJitFrame(iframe)) {
+    int lineno = jitFrameGetLineNumber(iframe);
+    if (lineno >= 0) {
+      return PyLong_FromLong(lineno);
+    }
+  }
+
+  // Fall back to the original CPython getter.
+  return s_original_lineno_getter(self, closure);
+}
+
+} // namespace
+
+void patchFrameLinenoGetter() {
+  PyGetSetDef* getset = PyFrame_Type.tp_getset;
+  if (getset == nullptr) {
+    return;
+  }
+  for (; getset->name != nullptr; getset++) {
+    if (strcmp(getset->name, "f_lineno") == 0) {
+      s_original_lineno_getter = getset->get;
+      getset->get = jitFrameLinenoGetter;
+      return;
+    }
+  }
 }
 
 } // namespace jit

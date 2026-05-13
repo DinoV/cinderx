@@ -4180,6 +4180,9 @@ LIRGenerator::TranslatedBlock LIRGenerator::TranslateOneBasicBlock(
                         OutVReg{dt}, Instruction::kMove, Imm{0, dt});
                   }
                   return zero_reg;
+                case FrameFieldKind::kReturnOffsetSentinel:
+                  return bbb.appendInstr(
+                      OutVReg{dt}, Instruction::kMove, Imm{0xFFFF, dt});
               }
               JIT_ABORT("Unexpected FrameFieldKind");
             },
@@ -5122,6 +5125,9 @@ void LIRGenerator::emitLoadFrame(BasicBlockBuilder& bbb) {
                     OutVReg{dt}, Instruction::kMove, Imm{0, dt});
               }
               return zero_reg;
+            case FrameFieldKind::kReturnOffsetSentinel:
+              return bbb.appendInstr(
+                  OutVReg{dt}, Instruction::kMove, Imm{0xFFFF, dt});
           }
           JIT_ABORT("Unexpected FrameFieldKind");
         },
