@@ -663,47 +663,6 @@ static void init_and_link_interpreter_frame(
   setCurrentFrame(tstate, frame);
 }
 
-static inline PyThreadState* allocate_and_link_interpreter_frame(
-    PyFunctionObject* func,
-    PyCodeObject* co) {
-  PyThreadState* tstate = PyThreadState_GET();
-  JIT_DCHECK(tstate != nullptr, "thread state cannot be null");
-  JIT_DCHECK(
-      PyCode_Check(func->func_code),
-      "Non-code object for JIT function: {}",
-      jit::repr(reinterpret_cast<PyObject*>(func)));
-
-  // Frame allocation failure is very unlikely - it can only happen if we run
-  // out of memory. If this happens we behave less gracefully than the
-  // interpreter as we don't have references to args to allow for proper
-  // clean-up. Maybe we'll want to change this in future if it limits
-  // us from getting something like a stack-trace on this kind of failure.
-  _PyInterpreterFrame* frame =
-      Cix_PyThreadState_PushFrame(tstate, co->co_framesize);
-  JIT_CHECK(frame != nullptr, "Failed to allocate _PyInterpreterFrame");
-
-  init_and_link_interpreter_frame(
-      func, co, tstate, FRAME_OWNED_BY_THREAD, frame);
-
-  return tstate;
-}
-
-PyThreadState* JITRT_AllocateAndLinkInterpreterFrame_Debug(
-    PyFunctionObject* func,
-    PyCodeObject* jit_code_object) {
-  PyCodeObject* co = (PyCodeObject*)func->func_code;
-  // Given this assertion we actually don't need to incref the code object as
-  // happens in _PyFrame_Initialize.
-  JIT_DCHECK(co == jit_code_object, "Code object mismatch");
-  return allocate_and_link_interpreter_frame(func, co);
-}
-
-PyThreadState* JITRT_AllocateAndLinkInterpreterFrame_Release(
-    PyFunctionObject* func) {
-  PyCodeObject* co = (PyCodeObject*)func->func_code;
-  return allocate_and_link_interpreter_frame(func, co);
-}
-
 void JITRT_InitFrameCellVars(
     PyFunctionObject* func,
     int nvars,
@@ -845,6 +804,14 @@ void JITRT_DecrefFrame(PyFrameObject* frame) {
   }
 }
 
+static void cleanupFrameExecutable(_PyInterpreterFrame* frame) {
+#if PY_VERSION_HEX >= 0x030E0000
+  PyStackRef_CLOSE(frame->f_executable);
+#else
+  Py_DECREF(frameExecutable(frame));
+#endif
+}
+
 void JITRT_UnlinkFrame(PyThreadState* tstate) {
   /*
    * The reference for this is _PyEvalFrameClearAndPop in ceval.c.
@@ -856,24 +823,12 @@ void JITRT_UnlinkFrame(PyThreadState* tstate) {
   // This is needed particularly because it handles the work of copying
   // data to a PyFrameObject if one has escaped the function.
   jit::jitFrameClearExceptCode(frame);
-#if PY_VERSION_HEX >= 0x030E0000
-  // Can't use a plain decref as this needs to be symmetric with
-  // _PyFrame_Initialize() which uses PyStackRef_FromPyObjectNew() for
-  // f_executable.
-  PyStackRef_CLOSE(frame->f_executable);
-#else
-  Py_DECREF(frameExecutable(frame));
-#endif
-
-  if (jit::getConfig().frame_mode != jit::FrameMode::kLightweight) {
-    _PyThreadState_PopFrame(tstate, frame);
-  }
-
-  // JIT frames are stack allocated so there's nothing to pop.
+  cleanupFrameExecutable(frame);
 }
 
 // Clean up the reifier and decref the executable for a lightweight frame.
 // Shared by JITRT_UnlinkLightweightFrameFast and JITRT_UnlinkLeafFrame.
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
 static void cleanupLightweightFrameExecutable(
     _PyInterpreterFrame* frame,
     [[maybe_unused]] jit::FrameHeader* header) {
@@ -895,14 +850,12 @@ static void cleanupLightweightFrameExecutable(
   Py_DECREF(frameExecutable(frame));
 #endif
 }
+#endif
 
 void JITRT_UnlinkLightweightFrameFast(PyThreadState* tstate) {
   _PyInterpreterFrame* frame = currentFrame(tstate);
   setCurrentFrame(tstate, frame->previous);
 
-  JIT_DCHECK(
-      jit::getConfig().frame_mode == jit::FrameMode::kLightweight,
-      "only safe to call with lightweight frames");
   JIT_DCHECK(
       frameCode(frame) != nullptr && frameCode(frame)->co_nfreevars == 0,
       "assumes no freevars");
@@ -914,6 +867,7 @@ void JITRT_UnlinkLightweightFrameFast(PyThreadState* tstate) {
 
   // Fast path for non-generator frames with no freevars.
   // The frame header is directly before the frame for non-generators.
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   auto* header = reinterpret_cast<jit::FrameHeader*>(frame) - 1;
   if (header->rtfs & JIT_FRAME_INITIALIZED) {
     // Frame was materialized by the runtime, use the slow path.
@@ -924,6 +878,16 @@ void JITRT_UnlinkLightweightFrameFast(PyThreadState* tstate) {
   }
 
   cleanupLightweightFrameExecutable(frame, header);
+#else
+  if (frame->frame_obj != nullptr) {
+    // Frame was materialized by the runtime, use the slow path.
+    jit::jitFrameClearExceptCode(frame);
+  } else {
+    // Common case: just close the function object.
+    Ci_STACK_CLOSE(frame->f_funcobj);
+  }
+  cleanupFrameExecutable(frame);
+#endif
 }
 
 void JITRT_UnlinkLeafFrame(PyThreadState* tstate) {
@@ -934,8 +898,12 @@ void JITRT_UnlinkLeafFrame(PyThreadState* tstate) {
   // materialization check and just close funcobj + executable directly.
   Ci_STACK_CLOSE(frame->f_funcobj);
 
+#ifdef ENABLE_LIGHTWEIGHT_FRAMES
   auto* header = reinterpret_cast<jit::FrameHeader*>(frame) - 1;
   cleanupLightweightFrameExecutable(frame, header);
+#else
+  cleanupFrameExecutable(frame);
+#endif
 }
 
 PyObject*

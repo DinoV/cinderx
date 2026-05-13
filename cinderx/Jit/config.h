@@ -29,11 +29,6 @@ enum class State : uint8_t {
   kFinalizing,
 };
 
-enum class FrameMode : uint8_t {
-  kNormal,
-  kLightweight,
-};
-
 // List of HIR optimization passes to run.
 struct HIROptimizations {
   bool begin_inlined_function_elim{true};
@@ -127,13 +122,6 @@ struct Config {
   // Ignore other CLI arguments and environment variables, force the JIT
   // to be initialized or uninitialized.  Intended for testing.
   std::optional<bool> force_init;
-  FrameMode frame_mode{
-#ifdef ENABLE_LIGHTWEIGHT_FRAMES
-      FrameMode::kLightweight
-#else
-      FrameMode::kNormal
-#endif
-  };
   bool allow_jit_list_wildcards{false};
   bool compile_all_static_functions{false};
   bool multiple_code_sections{false};

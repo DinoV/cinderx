@@ -168,14 +168,12 @@ uintptr_t prepareForDeopt(
   }
 #endif
 
-  if (getConfig().frame_mode == FrameMode::kLightweight) {
-    frame = reifyLightweightFrames(
-        tstate, deopt_meta, deopt_meta.inline_depth(), frame);
-    if (frame == nullptr) {
-      Py_FatalError("Cannot recover from OOM");
-    }
-    setCurrentFrame(tstate, frame);
+  frame = reifyLightweightFrames(
+      tstate, deopt_meta, deopt_meta.inline_depth(), frame);
+  if (frame == nullptr) {
+    Py_FatalError("Cannot recover from OOM");
   }
+  setCurrentFrame(tstate, frame);
 
   _PyInterpreterFrame* frame_iter = frame;
 
@@ -724,7 +722,6 @@ void* NativeGenerator::getVectorcallEntry() {
   env_.shadow_frames_and_spill_size = lsalloc.getFrameSize();
   env_.changed_regs = lsalloc.getChangedRegs();
   env_.exit_label = as_->newLabel();
-  env_.frame_mode = GetFunction()->frameMode;
   env_.can_deopt = GetFunction()->canDeopt();
 
   JIT_LOGIF(
@@ -1318,21 +1315,13 @@ void NativeGenerator::generateCode(
   }
 
   const hir::Function* func = GetFunction();
-  std::string_view prefix = [&] {
-    switch (func->frameMode) {
-      case FrameMode::kNormal:
-        [[fallthrough]];
-      case FrameMode::kLightweight:
-        return perf::kFuncSymbolPrefix;
-    }
-    JIT_ABORT("Invalid frame mode");
-  }();
   // For perf, we want only the size of the code, so we get that directly from
   // the text sections.
   std::vector<std::pair<void*, std::size_t>> code_sections;
   populateCodeSections(code_sections, codeholder, code_start_);
 #ifndef WIN32
-  perf::registerFunction(code_sections, func->fullname, prefix);
+  perf::registerFunction(
+      code_sections, func->fullname, perf::kFuncSymbolPrefix);
 #endif
 }
 

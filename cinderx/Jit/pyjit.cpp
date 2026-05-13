@@ -479,15 +479,6 @@ FlagProcessor initFlagProcessor() {
       "disable the JIT");
 
   flag_processor.addOption(
-      "jit-lightweight-frame",
-      "CINDERX_JIT_LIGHTWEIGHT_FRAME",
-      [](int val) {
-        getMutableConfig().frame_mode =
-            val ? FrameMode::kLightweight : FrameMode::kNormal;
-      },
-      "Enable/disable JIT lightweight frames");
-
-  flag_processor.addOption(
       "jit-stable-frame",
       "CINDERX_JIT_STABLE_FRAME",
       getMutableConfig().stable_frame,
@@ -722,9 +713,9 @@ FlagProcessor initFlagProcessor() {
   // Inlining is only compatible w/ lightweight frames because we need our
   // reifier to cooperate with restoring the frame object into something usable
   // when CPython wants it.
-  if (getConfig().frame_mode != FrameMode::kLightweight) {
-    getMutableConfig().hir_opts.inliner = false;
-  }
+#ifndef ENABLE_LIGHTWEIGHT_FRAMES
+  getMutableConfig().hir_opts.inliner = false;
+#endif
 
   // If the inliner is off and the user hasn't explicitly set the preload
   // dependent limit, set it to zero.  Nothing is going to be inlined so there's
@@ -2376,10 +2367,6 @@ PyObject* get_compiled_spill_stack_size(PyObject* /* self */, PyObject* func) {
   return PyLong_FromLong(size);
 }
 
-PyObject* jit_frame_mode(PyObject* /* self */, PyObject*) {
-  return PyLong_FromLong(static_cast<int>(getConfig().frame_mode));
-}
-
 PyObject* get_and_clear_inline_cache_stats(PyObject* /* self */, PyObject*) {
   auto stats = Ref<>::steal(PyDict_New());
   if (stats == nullptr) {
@@ -2863,11 +2850,6 @@ PyMethodDef jit_methods[] = {
      lazy_compile,
      METH_O,
      PyDoc_STR("Set a function to be JIT compiled the first time it is run.")},
-    {"jit_frame_mode",
-     jit_frame_mode,
-     METH_NOARGS,
-     PyDoc_STR(
-         "Get JIT frame mode (0 = normal frames, 1 = lightweight frames).")},
     {"get_jit_list",
      get_jit_list,
      METH_NOARGS,
