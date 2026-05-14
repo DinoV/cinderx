@@ -14,9 +14,12 @@ based on a Java version:
 from __future__ import annotations
 
 import __static__
-from __static__ import box, cast, cbool, inline, int64
+from __static__ import box, cbool, inline, int64
 
-from typing import Final
+from typing import Final, cast
+
+import cinderx.jit
+import sys
 
 # Task IDs
 I_IDLE: Final[int] = 1
@@ -70,8 +73,8 @@ class DeviceTaskRec(TaskRec):
 
 class IdleTaskRec(TaskRec):
     def __init__(self) -> None:
-        self.control: int64 = 1
-        self.count: int64 = 10000
+        self.control: int64 = int64(1)
+        self.count: int64 = int64(10000)
 
 
 class HandlerTaskRec(TaskRec):
@@ -91,7 +94,7 @@ class HandlerTaskRec(TaskRec):
 class WorkerTaskRec(TaskRec):
     def __init__(self) -> None:
         self.destination: int64 = int64(I_HANDLERA)
-        self.count: int64 = 0
+        self.count: int64 = int64(0)
 
 
 # Task
@@ -99,53 +102,57 @@ class WorkerTaskRec(TaskRec):
 
 class TaskState:
     def __init__(self) -> None:
-        self.packet_pending: cbool = True
-        self.task_waiting: cbool = False
-        self.task_holding: cbool = False
+        self.packet_pending: cbool = cbool(True)
+        self.task_waiting: cbool = cbool(False)
+        self.task_holding: cbool = cbool(False)
 
     def packetPending(self) -> TaskState:
-        self.packet_pending = True
-        self.task_waiting = False
-        self.task_holding = False
+        self.packet_pending: cbool = cbool(True)
+        self.task_waiting: cbool = cbool(False)
+        self.task_holding: cbool = cbool(False)
         return self
 
     def waiting(self) -> TaskState:
-        self.packet_pending = False
-        self.task_waiting = True
-        self.task_holding = False
+        self.packet_pending: cbool = cbool(False)
+        self.task_waiting: cbool = cbool(True)
+        self.task_holding: cbool = cbool(False)
         return self
 
     def running(self) -> TaskState:
-        self.packet_pending = False
-        self.task_waiting = False
-        self.task_holding = False
+        self.packet_pending: cbool = cbool(False)
+        self.task_waiting: cbool = cbool(False)
+        self.task_holding: cbool = cbool(False)
         return self
 
     def waitingWithPacket(self) -> TaskState:
-        self.packet_pending = True
-        self.task_waiting = True
-        self.task_holding = False
+        self.packet_pending: cbool = cbool(True)
+        self.task_waiting: cbool = cbool(True)
+        self.task_holding: cbool = cbool(False)
         return self
 
-    @inline
     def isPacketPending(self) -> cbool:
         return self.packet_pending
 
-    @inline
     def isTaskWaiting(self) -> cbool:
         return self.task_waiting
 
-    @inline
     def isTaskHolding(self) -> cbool:
         return self.task_holding
 
-    @inline
     def isTaskHoldingOrWaiting(self) -> cbool:
-        return self.task_holding or (not self.packet_pending and self.task_waiting)
+        if self.task_holding:
+            return cbool(True)
+        if not self.packet_pending:
+            if self.task_waiting:
+                return cbool(True)
+        return cbool(False)
 
-    @inline
     def isWaitingWithPacket(self) -> cbool:
-        return self.packet_pending and self.task_waiting and not self.task_holding
+        if self.packet_pending:
+            if self.task_waiting:
+                if not self.task_holding:
+                    return cbool(True)
+        return cbool(False)
 
 
 tracing: bool = False
@@ -171,8 +178,8 @@ class TaskWorkArea:
 
         self.taskList: Task | None = None
 
-        self.holdCount: int64 = 0
-        self.qpktCount: int64 = 0
+        self.holdCount: int64 = int64(0)
+        self.qpktCount: int64 = int64(0)
 
 
 class Task(TaskState):
@@ -190,9 +197,9 @@ class Task(TaskState):
         self.priority: int64 = p
         self.input: Packet | None = w
 
-        self.packet_pending = initialState.isPacketPending()
-        self.task_waiting = initialState.isTaskWaiting()
-        self.task_holding = initialState.isTaskHolding()
+        self.packet_pending: cbool = initialState.isPacketPending()
+        self.task_waiting: cbool = initialState.isTaskWaiting()
+        self.task_holding: cbool = initialState.isTaskHolding()
 
         self.handle = r
 
@@ -205,7 +212,7 @@ class Task(TaskState):
     def addPacket(self, p: Packet, old: Task) -> Task:
         if self.input is None:
             self.input = p
-            self.packet_pending = True
+            self.packet_pending: cbool= cbool(True)
             if self.priority > old.priority:
                 return self
         else:
@@ -227,30 +234,30 @@ class Task(TaskState):
         return self.fn(msg, self.handle)
 
     def waitTask(self) -> Task:
-        self.task_waiting = True
+        self.task_waiting: cbool = cbool(True)
         return self
 
     def hold(self) -> Task | None:
         taskWorkArea.holdCount += 1
-        self.task_holding = True
+        self.task_holding: cbool = cbool(True)
         return self.link
 
-    def release(self, i: int64) -> Task:
-        t: Task = Task.findtcb(self, i)
-        t.task_holding = False
+    def release(self, i: int) -> Task:
+        t: Task = self.findtcb(i)
+        t.task_holding = cbool(False)
         if t.priority > self.priority:
             return t
         else:
             return self
 
     def qpkt(self, pkt: Packet) -> Task:
-        t: Task = Task.findtcb(self, pkt.ident)
+        t: Task = self.findtcb(box(pkt.ident))
         taskWorkArea.qpktCount += 1
         pkt.link = None
         pkt.ident = self.ident
         return t.addPacket(pkt, self)
 
-    def findtcb(self, id: int64) -> Task:
+    def findtcb(self, id: int) -> Task:
         t = taskWorkArea.taskTab[id]
         return cast(Task, t)
 
@@ -321,7 +328,7 @@ class IdleTask(Task):
     def __init__(
         self, i: int64, p: int64, w: int, s: TaskState, r: IdleTaskRec
     ) -> None:
-        Task.__init__(self, i, 0, None, s, r)
+        Task.__init__(self, i, int64(0), None, s, r)
 
     def fn(self, pkt: Packet | None, r: TaskRec) -> Task | None:
         i: IdleTaskRec = cast(IdleTaskRec, r)
@@ -330,12 +337,10 @@ class IdleTask(Task):
             return self.hold()
         elif i.control & 1 == 0:
             i.control //= 2
-            # TODO: We should automatically support an INVOKE_FUNCTION here
-            # if we make IdleTask final, and support primitives in method calls
-            return Task.release(self, int64(I_DEVA))
+            return self.release(I_DEVA)
         else:
-            i.control = i.control // 2 ^ 0xD008
-            return Task.release(self, int64(I_DEVB))
+            i.control = i.control // 2 ^ int64(0xD008)
+            return self.release(I_DEVB)
 
 
 # WorkTask
@@ -368,8 +373,8 @@ class WorkTask(Task):
         while i < BUFSIZE:
             x: int64 = w.count + 1
             w.count = x
-            if w.count > 26:
-                w.count = 1
+            if w.count > int64(26):
+                w.count = int64(1)
             pkt.data[i] = A + box(w.count) - 1
             i = i + 1
 
@@ -393,16 +398,16 @@ def schedule() -> None:
 class Richards:
     def run(self, iterations: int) -> bool:
         for i in range(iterations):
-            taskWorkArea.holdCount = 0
-            taskWorkArea.qpktCount = 0
+            taskWorkArea.holdCount = int64(0)
+            taskWorkArea.qpktCount = int64(0)
 
-            IdleTask(int64(I_IDLE), 1, 10000, TaskState().running(), IdleTaskRec())
+            IdleTask(int64(I_IDLE), int64(1), 10000, TaskState().running(), IdleTaskRec())
 
-            wkq: Packet | None = Packet(None, 0, int64(K_WORK))
-            wkq = Packet(wkq, 0, int64(K_WORK))
+            wkq: Packet | None = Packet(None, int64(0), int64(K_WORK))
+            wkq = Packet(wkq, int64(0), int64(K_WORK))
             WorkTask(
                 int64(I_WORK),
-                1000,
+                int64(1000),
                 wkq,
                 TaskState().waitingWithPacket(),
                 WorkerTaskRec(),
@@ -413,7 +418,7 @@ class Richards:
             wkq = Packet(wkq, int64(I_DEVA), int64(K_DEV))
             HandlerTask(
                 int64(I_HANDLERA),
-                2000,
+                int64(2000),
                 wkq,
                 TaskState().waitingWithPacket(),
                 HandlerTaskRec(),
@@ -424,15 +429,15 @@ class Richards:
             wkq = Packet(wkq, int64(I_DEVB), int64(K_DEV))
             HandlerTask(
                 int64(I_HANDLERB),
-                3000,
+                int64(3000),
                 wkq,
                 TaskState().waitingWithPacket(),
                 HandlerTaskRec(),
             )
 
             wkq = None
-            DeviceTask(int64(I_DEVA), 4000, wkq, TaskState().waiting(), DeviceTaskRec())
-            DeviceTask(int64(I_DEVB), 5000, wkq, TaskState().waiting(), DeviceTaskRec())
+            DeviceTask(int64(I_DEVA), int64(4000), wkq, TaskState().waiting(), DeviceTaskRec())
+            DeviceTask(int64(I_DEVB), int64(5000), wkq, TaskState().waiting(), DeviceTaskRec())
 
             schedule()
 
@@ -442,3 +447,15 @@ class Richards:
                 print("err")
                 return False
         return True
+
+if __name__ == "__main__":
+    cinderx.jit.auto()
+
+    import time
+    s = time.perf_counter()
+    num_iterations = 100
+    if len(sys.argv) > 1:
+        num_iterations = int(sys.argv[1])
+    Richards().run(num_iterations)
+    e = time.perf_counter()
+    print(e-s)

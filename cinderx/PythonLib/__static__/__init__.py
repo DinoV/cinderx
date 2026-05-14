@@ -290,6 +290,75 @@ class int64(int):
         def __add__(self, other) -> int64:
             return int64(0)
 
+        def __radd__(self, other) -> int64:
+            return int64(0)
+
+        def __sub__(self, other) -> int64:
+            return int64(0)
+
+        def __rsub__(self, other) -> int64:
+            return int64(0)
+
+        def __mul__(self, other) -> int64:
+            return int64(0)
+
+        def __rmul__(self, other) -> int64:
+            return int64(0)
+
+        def __floordiv__(self, other) -> int64:
+            return int64(0)
+
+        def __rfloordiv__(self, other) -> int64:
+            return int64(0)
+
+        def __mod__(self, other) -> int64:
+            return int64(0)
+
+        def __rmod__(self, other) -> int64:
+            return int64(0)
+
+        def __and__(self, other) -> int64:
+            return int64(0)
+
+        def __rand__(self, other) -> int64:
+            return int64(0)
+
+        def __or__(self, other) -> int64:
+            return int64(0)
+
+        def __ror__(self, other) -> int64:
+            return int64(0)
+
+        def __xor__(self, other) -> int64:
+            return int64(0)
+
+        def __rxor__(self, other) -> int64:
+            return int64(0)
+
+        def __lshift__(self, other) -> int64:
+            return int64(0)
+
+        def __rlshift__(self, other) -> int64:
+            return int64(0)
+
+        def __rshift__(self, other) -> int64:
+            return int64(0)
+
+        def __rrshift__(self, other) -> int64:
+            return int64(0)
+
+        def __neg__(self) -> int64:
+            return int64(0)
+
+        def __invert__(self) -> int64:
+            return int64(0)
+
+        def __pos__(self) -> int64:
+            return int64(0)
+
+        def __abs__(self) -> int64:
+            return int64(0)
+
 
 @set_type_final
 @type_code(TYPED_UINT8)
@@ -531,32 +600,7 @@ def inline(func):
 def _donotcompile(func):
     return func
 
-
-def cast(typ, val):
-    union_args = None
-    if isinstance(typ, _GenericAlias):
-        typ, args = typ.__origin__, typ.__args__
-        if typ is Union:
-            union_args = args
-    elif type(typ) is typesUnion:
-        union_args = typ.__args__
-    if union_args:
-        typ = None
-        if len(union_args) == 2:
-            if union_args[0] is type(None):  # noqa: E721
-                typ = union_args[1]
-            elif union_args[1] is type(None):  # noqa: E721
-                typ = union_args[0]
-        if typ is None:
-            raise ValueError("cast expects type or Optional[T]")
-        if val is None:
-            return None
-
-    inst_type = type(val)
-    if typ not in inst_type.__mro__:
-        raise TypeError(f"expected {typ.__name__}, got {type(val).__name__}")
-
-    return val
+from typing import cast
 
 
 def prod_assert(value: bool, message: str | None = None):

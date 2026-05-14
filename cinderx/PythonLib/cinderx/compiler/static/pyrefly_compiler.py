@@ -45,6 +45,7 @@ class PyreflyCompiler(Compiler):
         self.pyrefly = pyrefly
         self.static_opt_in = static_opt_in
         self.static_opt_out: set[str] = static_opt_out or set()
+        self.pyrefly_name_map: dict[str, str] = {}
 
     def get_flags(
         self, module_name: str, pyast: ast.Module, override_flags: Flags
@@ -103,7 +104,8 @@ class PyreflyCompiler(Compiler):
     ) -> TypeBinder:
         type_info = EMPTY_TYPE_INFO
         if self.pyrefly is not None:
-            type_info = self.pyrefly.load_type_info(module_name) or EMPTY_TYPE_INFO
+            pyrefly_name = self.pyrefly_name_map.get(module_name, module_name)
+            type_info = self.pyrefly.load_type_info(pyrefly_name) or EMPTY_TYPE_INFO
         return PyreflyTypeBinder(
             symbols,
             filename,

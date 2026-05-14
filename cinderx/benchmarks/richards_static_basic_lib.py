@@ -20,6 +20,7 @@ from __static__ import cast
 
 import sys
 from typing import Final
+import cinderx.jit
 
 # Task IDs
 I_IDLE: Final[int] = 1
@@ -421,7 +422,15 @@ class Richards:
 
 
 if __name__ == "__main__":
+    cinderx.jit.auto()
+
+    import time
+    s = time.perf_counter()
     num_iterations = 1
     if len(sys.argv) > 1:
         num_iterations = int(sys.argv[1])
     Richards().run(num_iterations)
+    e = time.perf_counter()
+
+
+    print(e-s)

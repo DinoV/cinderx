@@ -97,6 +97,7 @@ def compile_pyrefly(
             pyrefly_modname = entry.get("module_name") or entry.get("module") or modname
             break
     source_modules.add(pyrefly_modname)
+    source_modules.add(modname)
 
     pyrefly = Pyrefly(types_dir)
     pyrefly_compiler = PyreflyCompiler(
@@ -104,10 +105,12 @@ def compile_pyrefly(
         static_opt_in=source_modules,
         path=[input_dir] + sys.path,
     )
+    if pyrefly_modname != modname:
+        pyrefly_compiler.pyrefly_name_map[modname] = pyrefly_modname
     result = pyrefly_compiler.load_compiled_module_from_source(
         source,
         input_path,
-        pyrefly_modname,
+        modname,
         optimize=optimize,
     )
     codeobj = result[0]

@@ -9,6 +9,7 @@ from ast import AST, Attribute, Call, Compare, Constant, Expr, Name, Return
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from ..consts import SC_LOCAL
 from ..errors import TypedSyntaxError
 from ..symbols import SymbolVisitor
 from .effects import NarrowingEffect
@@ -50,16 +51,21 @@ class PyreflyTypeBinder(TypeBinder):
 
     def visit(self, node: AST, *args: object) -> NarrowingEffect | None:
         if isinstance(node, ast.expr) and self._type_info is not None:
-            # For BinOp/UnaryOp, use the base visitor so that type
-            # context propagates to operands (needed for CInstance
-            # promotion, e.g. `int64(x) + 1` must promote `1` to
-            # int64).  The base visitBinOp/visitUnaryOp also calls
-            # bind_binop/bind_unaryop which sets BinOpCommonType,
-            # required by emit_binop in code generation.
-            if isinstance(node, (ast.BinOp, ast.UnaryOp, ast.Lambda)):
-                ret = super().visit(node, *args)
-            else:
-                ret = super().generic_visit(node, *args)
+            # For BinOp/UnaryOp/Compare/Subscript, fully delegate to the
+            # base visitor.  It sets up BinOpCommonType and primitive
+            # promotion for arithmetic, bind_compare for primitive
+            # comparisons, and bind_subscr for typed container access
+            # (e.g. list[int] subscript emitting CAST).  Do NOT
+            # override the type afterward — see comment below.
+            if isinstance(node, (ast.BinOp, ast.UnaryOp, ast.Compare, ast.Subscript, ast.Lambda)):
+                # Fully delegate to the base visitor — it sets up
+                # BinOpCommonType, primitive promotion, and the correct
+                # result type.  Do NOT override the type afterward, as
+                # that would replace precise types (e.g. cbool from
+                # bind_compare) with dynamic, breaking primitive codegen.
+                return super().visit(node, *args)
+
+            ret = super().generic_visit(node, *args)
             # pyre-fixme[16]: Optional type has no attribute `lookup`.
             declared_type = self._type_info.lookup(node, self.modules, self.type_env)
             if declared_type is None:
@@ -80,10 +86,6 @@ class PyreflyTypeBinder(TypeBinder):
                 if isinstance(type_ctx, Value):
                     type_ctx.bind_constant(node, self)
 
-            elif isinstance(node, Compare):
-                for op in node.ops:
-                    self.set_type(op, self.type_env.DYNAMIC)
-
             # Name: set PreserveRefinedFields (always), declare locals for
             # Store context, and set TypeDescr for module-level names so
             # that bind_call can emit direct invocations.  When pyrefly
@@ -96,21 +98,32 @@ class PyreflyTypeBinder(TypeBinder):
                         self.declare_local(node.id, declared_type)
                     except TypedSyntaxError:
                         pass  # already declared, just update the type
-                mod_typ, descr = self.module.resolve_name_with_descr(
-                    node.id, self.context_qualname
-                )
-                if descr is not None:
-                    self.set_node_data(node, TypeDescr, descr)
-                if (
-                    mod_typ is not None
-                    and declared_type is self.type_env.dynamic.instance
-                ):
-                    self.set_type(node, mod_typ)
+                cur_scope = self.symbols.scopes[self.scope]
+                var_scope = cur_scope.check_name(node.id)
+                if var_scope == SC_LOCAL and not isinstance(self.scope, ast.Module):
+                    if declared_type is self.type_env.dynamic.instance:
+                        local_type = self.type_state.local_types.get(node.id)
+                        if local_type is not None:
+                            self.set_type(node, local_type)
+                else:
+                    mod_typ, descr = self.module.resolve_name_with_descr(
+                        node.id, self.context_qualname
+                    )
+                    if descr is not None:
+                        self.set_node_data(node, TypeDescr, descr)
+                    if (
+                        mod_typ is not None
+                        and declared_type is self.type_env.dynamic.instance
+                    ):
+                        self.set_type(node, mod_typ)
 
             # Attribute: when the base is a ModuleInstance, set TypeDescr
             # for direct access and call bind_attr to resolve from the
             # CinderX module table — this ensures CinderX-specific types
             # (e.g. DataclassFieldFunction, DataclassDecorator) are used.
+            # When pyrefly doesn't resolve the type, fall back to
+            # bind_attr so that field and method types are correctly
+            # resolved from the class definition.
             # Set PreserveRefinedFields when the attribute is refinable.
             elif isinstance(node, Attribute):
                 base = self.get_type(node.value)
@@ -122,6 +135,8 @@ class PyreflyTypeBinder(TypeBinder):
                     # CinderX-specific types (e.g. DataclassFieldFunction,
                     # DataclassDecorator) are used regardless of what
                     # pyrefly resolved.
+                    base.bind_attr(node, self, None)
+                elif declared_type is self.type_env.dynamic.instance:
                     base.bind_attr(node, self, None)
                 if self.is_refinable(node):
                     self.set_node_data(

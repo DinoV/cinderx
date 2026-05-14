@@ -422,7 +422,11 @@ class Richards:
 if __name__ == "__main__":
     cinderx.jit.auto()
 
-    num_iterations = 1
+    from time import perf_counter
+    s = perf_counter()
+    num_iterations = 100
     if len(sys.argv) > 1:
         num_iterations = int(sys.argv[1])
     Richards().run(num_iterations)
+    e = perf_counter()
+    print(e-s)

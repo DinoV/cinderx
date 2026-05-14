@@ -18,7 +18,11 @@ except ImportError:
 if __name__ == "__main__":
     cinderx.jit.auto()
 
-    num_iterations = 1
+    import time
+    s = time.perf_counter()
+    num_iterations = 100
     if len(sys.argv) > 1:
         num_iterations = int(sys.argv[1])
     Richards().run(num_iterations)
+    e = time.perf_counter()
+    print(e-s)

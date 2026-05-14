@@ -46,3 +46,9 @@ test-command = "pytest {project}/cinderx/PythonLib/test_cinderx/test*.py"
 # If it exists, pass through CINDERX_VERSION_PATCH to setuptools to specify the
 # patch version.
 environment-pass = ["CINDERX_VERSION_PATCH"]
+
+[tool.pyrefly]
+project-includes = [
+    "**/*.py*",
+    "**/*.ipynb",
+]
